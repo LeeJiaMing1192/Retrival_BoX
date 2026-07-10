@@ -1049,7 +1049,16 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
             if (clean.endsWith("```")) clean = clean.substring(0, clean.length - 3);
             clean = clean.trim();
             
-            const parsed = JSON.parse(clean);
+            // Replace literal newlines and control characters inside double-quoted JSON strings to avoid JSON.parse errors
+            let sanitized = clean;
+            
+            // Replace literal newlines inside JSON string properties with actual escaped \\n characters
+            sanitized = sanitized.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (_match: string, stringVal: string) => {
+              const cleanedVal = stringVal.replace(/\r?\n/g, '\\n');
+              return `"${cleanedVal}"`;
+            });
+            
+            const parsed = JSON.parse(sanitized);
             if (!parsed.id) {
               parsed.id = `rm-${Date.now()}`;
             }
