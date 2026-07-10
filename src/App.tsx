@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { INITIAL_SUBJECTS, INITIAL_CARDS } from "./db";
+import { INITIAL_SUBJECTS } from "./db";
 import type { Card, Mood, AppSettings, CheckpointQuestion, LearningRoadmap } from "./types";
 
 // Checkpoint questions data
@@ -271,9 +271,19 @@ export default function App() {
   const [ocrPresetsSel, setOcrPresetsSel] = useState<string>("chemistry-este");
   const [ocrPreviewSrc, setOcrPreviewSrc] = useState<string>("https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?auto=format&fit=crop&w=500&q=80");
   
+  // OCR Input Type, Verification Modal, Praise Modal & Hint state additions
+  const [ocrInputType, setOcrInputType] = useState<'file' | 'text'>('file');
+  const [ocrTextContent, setOcrTextContent] = useState<string>("");
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState<boolean>(false);
+  const [verificationCards, setVerificationCards] = useState<Card[]>([]);
+  const [showHint, setShowHint] = useState<boolean>(false);
+  const [showPraiseModal, setShowPraiseModal] = useState<boolean>(false);
+  const [praiseTimeSpent, setPraiseTimeSpent] = useState<number>(0);
+  const [savedRoadmaps, setSavedRoadmaps] = useState<LearningRoadmap[]>([]);
 
   // Map state
   const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
+  const [activeMapId, setActiveMapId] = useState<string>("");
 
   // Chat Tutor state
   const [chatInput, setChatInput] = useState<string>("");
@@ -297,16 +307,24 @@ export default function App() {
 
   // --- LOCAL STORAGE LIFE CYCLE ---
   useEffect(() => {
-    // 1. Load cards
+    // 1. Load cards (blank slate by default)
     const savedCards = localStorage.getItem("retrieval_cards");
     let loadedCards: Card[] = [];
     if (savedCards) {
       loadedCards = JSON.parse(savedCards);
     } else {
-      loadedCards = [...INITIAL_CARDS];
+      loadedCards = []; // Start blank!
       localStorage.setItem("retrieval_cards", JSON.stringify(loadedCards));
     }
     setCards(loadedCards);
+
+    // Load saved roadmaps
+    const savedRoadmapsStr = localStorage.getItem("saved_roadmaps");
+    if (savedRoadmapsStr) {
+      setSavedRoadmaps(JSON.parse(savedRoadmapsStr));
+    } else {
+      setSavedRoadmaps([]);
+    }
 
     // 2. Load streak, points, mood, examDate, api key, settings
     const savedStreak = localStorage.getItem("userStreak");
@@ -370,6 +388,16 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    setShowHint(false);
+  }, [activeCard, flipped]);
+
+  useEffect(() => {
+    if (savedRoadmaps.length > 0 && !activeMapId) {
+      setActiveMapId(savedRoadmaps[0].id);
+    }
+  }, [savedRoadmaps, activeMapId]);
+
   // --- RECALCULATE DUE QUEUE & DISTRIBUTION ---
   const now = new Date().getTime();
   
@@ -397,12 +425,11 @@ export default function App() {
     // Burnout alert trigger count
     let box1Total = 0;
     cards.forEach(c => {
-      if (c.subjectId === activeSubject && c.box === 1) box1Total++;
+      if (c.box === 1) box1Total++;
     });
     const triggerBurnout = settings.antiBurnout && box1Total > 5;
 
     cards.forEach(card => {
-      if (card.subjectId !== activeSubject) return;
 
       stats.total++;
       const type = card.type;
@@ -607,6 +634,17 @@ export default function App() {
       const isCorrect = selectedGreenOption === activeCard.correctOption;
       setFlipped(true);
       fetchTutorGradingFeedback(activeCard.options?.[selectedGreenOption] || "", isCorrect);
+
+      // Praise popup trigger for quick correct recall
+      if (isCorrect && secondsElapsed < 15) {
+        setPraiseTimeSpent(secondsElapsed);
+        setShowPraiseModal(true);
+        setPoints(prev => {
+          const added = prev + 10;
+          localStorage.setItem("userPoints", added.toString());
+          return added;
+        });
+      }
     } else {
       if (!essayAnswer.trim()) {
         alert("Hãy nhập bài giải/câu trả lời tự luận trước khi lật thẻ!");
@@ -614,6 +652,17 @@ export default function App() {
       }
       setFlipped(true);
       fetchTutorGradingFeedback(essayAnswer, true);
+
+      // Praise popup trigger for quick analysis (if delay is bypassed or not applicable)
+      if (secondsElapsed < 15) {
+        setPraiseTimeSpent(secondsElapsed);
+        setShowPraiseModal(true);
+        setPoints(prev => {
+          const added = prev + 10;
+          localStorage.setItem("userPoints", added.toString());
+          return added;
+        });
+      }
     }
   };
 
@@ -868,10 +917,27 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
       setTimeout(() => {
         setOcrStatus("done");
         const presetData = ROADMAP_PRESETS[ocrPresetsSel] || ROADMAP_PRESETS["chemistry-este"];
-        setActiveRoadmap(presetData);
-        if (presetData.milestones.length > 0) {
-          setSelectedMilestoneId(presetData.milestones[0].id);
+        const clonedRoadmap = {
+          ...presetData,
+          id: `rm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          topicName: presetData.topicName + ` (${new Date().toLocaleTimeString()})`
+        };
+        setActiveRoadmap(clonedRoadmap);
+        if (clonedRoadmap.milestones.length > 0) {
+          setSelectedMilestoneId(clonedRoadmap.milestones[0].id);
         }
+        
+        // Save to savedRoadmaps list
+        setSavedRoadmaps(prev => {
+          const updated = [...prev, clonedRoadmap];
+          localStorage.setItem("saved_roadmaps", JSON.stringify(updated));
+          return updated;
+        });
+
+        // Extract cards and open verification layer popup
+        const extractedCards = clonedRoadmap.milestones.flatMap((m: any) => m.cards || []);
+        setVerificationCards(JSON.parse(JSON.stringify(extractedCards)));
+        setIsVerificationModalOpen(true);
       }, 3600);
     };
 
@@ -984,11 +1050,26 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
             clean = clean.trim();
             
             const parsed = JSON.parse(clean);
+            if (!parsed.id) {
+              parsed.id = `rm-${Date.now()}`;
+            }
             setActiveRoadmap(parsed);
             if (parsed.milestones && parsed.milestones.length > 0) {
               setSelectedMilestoneId(parsed.milestones[0].id);
             }
             setOcrStatus("done");
+
+            // Save to savedRoadmaps list
+            setSavedRoadmaps(prev => {
+              const updated = [...prev, parsed];
+              localStorage.setItem("saved_roadmaps", JSON.stringify(updated));
+              return updated;
+            });
+
+            // Extract cards and open verification layer popup
+            const extractedCards = parsed.milestones.flatMap((m: any) => m.cards || []);
+            setVerificationCards(JSON.parse(JSON.stringify(extractedCards)));
+            setIsVerificationModalOpen(true);
           } catch(e) {
             console.error("Failed to parse Gemini Roadmap JSON response", e, res);
             runOfflineMock();
@@ -1079,6 +1160,72 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
     alert(`🎉 Kích hoạt toàn bộ lộ trình thành công! Đã thêm tất cả ${allCardsToAdd.length} thẻ truy hồi vào tủ thẻ Ngăn 1.`);
   };
 
+  const handleDeleteRoadmap = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const updated = savedRoadmaps.filter(r => r.id !== id);
+    setSavedRoadmaps(updated);
+    localStorage.setItem("saved_roadmaps", JSON.stringify(updated));
+    if (activeRoadmap?.id === id) {
+      setActiveRoadmap(null);
+      setOcrStatus("idle");
+    }
+  };
+
+  const handleUpdateVerificationCard = (index: number, updatedFields: Partial<Card>) => {
+    setVerificationCards(prev => prev.map((c, i) => i === index ? { ...c, ...updatedFields } : c));
+  };
+
+  const handleUpdateVerificationCardOption = (cardIndex: number, optionIndex: number, value: string) => {
+    setVerificationCards(prev => prev.map((c, i) => {
+      if (i === cardIndex) {
+        const opts = [...(c.options || ["", "", "", ""])];
+        opts[optionIndex] = value;
+        return { ...c, options: opts };
+      }
+      return c;
+    }));
+  };
+
+  const handleConfirmVerification = (editedCards: Card[]) => {
+    const cleanCardsToAdd = editedCards.map(c => ({
+      ...c,
+      id: c.id || `card-ms-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      box: 1, // Start in Leitner Box 1
+      lastReviewed: null,
+      nextReviewDate: null,
+      history: []
+    }));
+
+    // Filter duplicates based on question content
+    const duplicatesRemoved = cleanCardsToAdd.filter(cAdd => !cards.some(c => c.question.trim() === cAdd.question.trim()));
+    if (duplicatesRemoved.length === 0) {
+      alert("Tất cả các thẻ này đã tồn tại trong Leitner!");
+      setIsVerificationModalOpen(false);
+      return;
+    }
+
+    const updated = [...cards, ...duplicatesRemoved];
+    saveCardsState(updated);
+
+    // Update activeRoadmap milestones to completed
+    if (activeRoadmap) {
+      const completedMilestones = activeRoadmap.milestones.map(m => ({ ...m, status: "completed" as const }));
+      setActiveRoadmap({
+        ...activeRoadmap,
+        milestones: completedMilestones
+      });
+    }
+
+    setPoints(prev => {
+      const added = prev + 100;
+      localStorage.setItem("userPoints", added.toString());
+      return added;
+    });
+
+    setIsVerificationModalOpen(false);
+    alert(`🎉 Xác nhận thành công! Đã chuyển ${duplicatesRemoved.length} thẻ lý thuyết vào Kho lưu trữ Leitner chính thức.`);
+  };
+
   // --- AI TUTOR LIVE CHAT ---
   const handleSendMessage = () => {
     if (!chatInput.trim()) return;
@@ -1121,66 +1268,25 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
   };
 
   // --- KNOWLEDGE MAP CONFIGS ---
-  const handleMapNodeClick = (chId: string) => {
-    // Check locked state: prerequisite chapters must be mastered (all cards in box 3)
-    const ch = INITIAL_SUBJECTS[activeSubject]?.chapters.find(c => c.id === chId);
-    if (!ch) return;
+  const handleStartCardPractice = (targetCard: Card) => {
+    setForcePracticeAll(true);
+    setFilterChapter("all");
+    setFilterBloom({ green: true, yellow: true, red: true });
+    setFilterBox({ box1: true, box2: true, box3: true });
 
-    const locked = ch.prerequisites.some(preId => {
-      const preCards = cards.filter(c => c.subjectId === activeSubject && c.chapterId === preId);
-      if (preCards.length === 0) return false;
-      const b3Count = preCards.filter(c => c.box === 3).length;
-      return b3Count < preCards.length; // locked if prerequisite cards not fully mastered
-    });
-
-    if (locked) {
-      alert("🔒 Chương này đang bị khóa! Bạn cần hoàn thành tất cả thẻ ở các chương tiên quyết trước để tránh đứt gãy nhận thức.");
-      return;
-    }
-
-    setSelectedMapNodeId(chId);
-  };
-
-  const getNodeState = (chId: string, prerequisites: string[]) => {
-    const chapterCards = cards.filter(c => c.subjectId === activeSubject && c.chapterId === chId);
-    if (chapterCards.length === 0) return "mastered";
-
-    const b3Count = chapterCards.filter(c => c.box === 3).length;
-    const greenYellowB3Count = chapterCards.filter(c => c.box === 3 && (c.type === "green" || c.type === "yellow")).length;
-    const greenYellowTotal = chapterCards.filter(c => c.type === "green" || c.type === "yellow").length;
-
-    // Prereq check
-    const locked = prerequisites.some(preId => {
-      const preCards = cards.filter(c => c.subjectId === activeSubject && c.chapterId === preId);
-      if (preCards.length === 0) return false;
-      return preCards.filter(c => c.box === 3).length < preCards.length;
-    });
-
-    if (locked) return "locked";
-    if (b3Count === chapterCards.length) return "mastered";
-    if (greenYellowTotal > 0 && greenYellowB3Count === greenYellowTotal) return "red-ready";
-    return "active";
-  };
-
-  // SVG parameters based on subject
-  const getMapNodesCoords = () => {
-    if (activeSubject === "chemistry") {
-      return [
-        { id: "c1", x: 120, y: 220 },
-        { id: "c2", x: 340, y: 140 },
-        { id: "c3", x: 560, y: 220 },
-        { id: "c4", x: 780, y: 320 }
-      ];
+    let list = cards.filter(card => card.subjectId === activeSubject);
+    setFilteredQueue(list);
+    
+    const cardIdx = list.findIndex(c => c.question.trim() === targetCard.question.trim());
+    if (cardIdx !== -1) {
+      setCurrentQueueIndex(cardIdx);
     } else {
-      return [
-        { id: "p1", x: 150, y: 220 },
-        { id: "p2", x: 450, y: 150 },
-        { id: "p3", x: 750, y: 280 }
-      ];
+      setCurrentQueueIndex(0);
     }
+    
+    setFlipped(false);
+    setActiveTab("retrieval");
   };
-
-  const coords = getMapNodesCoords();
 
   return (
     <div className="app-container">
@@ -1307,262 +1413,354 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
           {/* TAB: DASHBOARD */}
           {activeTab === "dashboard" && (
             <section className="tab-content active">
-              <div className="welcome-banner">
-                <div className="welcome-text">
-                  <h1>Chào mừng quay trở lại ôn tập! 👋</h1>
-                  <p>Mỗi ngày dành ra 30 phút rèn luyện để xây dựng cấu trúc não bộ bền vững, chống đứt gãy nhận thức.</p>
-                  <div className="banner-cta">
-                    <button className="btn btn-primary btn-glow" onClick={() => setActiveTab("retrieval")}>
-                      <i className="fa-solid fa-bolt"></i> Ôn tập nhanh theo cảm xúc
-                    </button>
+              {cards.length === 0 ? (
+                <div className="glass-panel notebook-paper" style={{ padding: "2.5rem 2rem 2.5rem 3.5rem", position: "relative", minHeight: "450px" }}>
+                  <div className="spiral-rings">
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
                   </div>
-                </div>
-                <div className="welcome-graphics">
-                  <div className="retrieval-box-visual">
-                    <div className="box-layer layer-red" title="Synthesize"></div>
-                    <div className="box-layer layer-yellow" title="Apply"></div>
-                    <div className="box-layer layer-green" title="Recall"></div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick stats distribution grids */}
-              <div className="stats-grid">
-                {/* Green card recall */}
-                <div className="stat-card card-glow-green">
-                  <div className="stat-header">
-                    <span className="badge badge-green">Recall</span>
-                    <i className="fa-solid fa-circle-check text-green"></i>
-                  </div>
-                  <div className="stat-body">
-                    <h3>Thẻ Xanh</h3>
-                    <p className="stat-desc">Định nghĩa & Công thức</p>
-                    <div className="box-distribution">
-                      <div className="dist-bar">
-                        <span className="bar-s1" title="Ngăn 1" style={{ width: `${stats.green.total ? (stats.green.s1 / stats.green.total) * 100 : 0}%`, backgroundColor: "var(--color-green)" }}></span>
-                        <span className="bar-s2" title="Ngăn 2" style={{ width: `${stats.green.total ? (stats.green.s2 / stats.green.total) * 100 : 0}%`, backgroundColor: "var(--color-green)" }}></span>
-                        <span className="bar-s3" title="Ngăn 3" style={{ width: `${stats.green.total ? (stats.green.s3 / stats.green.total) * 100 : 0}%`, backgroundColor: "var(--color-green)" }}></span>
-                      </div>
-                    </div>
-                    <div className="stat-info-line">
-                      <span>Tổng: <b>{stats.green.total}</b> thẻ</span>
-                      <span>Đã vững: <b>{stats.green.mastered}</b></span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Yellow card apply */}
-                <div className="stat-card card-glow-yellow">
-                  <div className="stat-header">
-                    <span className="badge badge-yellow">Apply</span>
-                    <i className="fa-solid fa-chart-simple text-yellow"></i>
-                  </div>
-                  <div className="stat-body">
-                    <h3>Thẻ Vàng</h3>
-                    <p className="stat-desc">Vận dụng đơn lẻ</p>
-                    <div className="box-distribution">
-                      <div className="dist-bar">
-                        <span className="bar-s1" title="Ngăn 1" style={{ width: `${stats.yellow.total ? (stats.yellow.s1 / stats.yellow.total) * 100 : 0}%`, backgroundColor: "var(--color-yellow)" }}></span>
-                        <span className="bar-s2" title="Ngăn 2" style={{ width: `${stats.yellow.total ? (stats.yellow.s2 / stats.yellow.total) * 100 : 0}%`, backgroundColor: "var(--color-yellow)" }}></span>
-                        <span className="bar-s3" title="Ngăn 3" style={{ width: `${stats.yellow.total ? (stats.yellow.s3 / stats.yellow.total) * 100 : 0}%`, backgroundColor: "var(--color-yellow)" }}></span>
-                      </div>
-                    </div>
-                    <div className="stat-info-line">
-                      <span>Tổng: <b>{stats.yellow.total}</b> thẻ</span>
-                      <span>Đã vững: <b>{stats.yellow.mastered}</b></span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Red card synthesize */}
-                <div className="stat-card card-glow-red">
-                  <div className="stat-header">
-                    <span className="badge badge-red">Synthesize</span>
-                    <i className="fa-solid fa-circle-nodes text-red"></i>
-                  </div>
-                  <div className="stat-body">
-                    <h3>Thẻ Đỏ</h3>
-                    <p className="stat-desc">Tổng hợp liên chương</p>
-                    <div className="box-distribution">
-                      <div className="dist-bar">
-                        <span className="bar-s1" title="Ngăn 1" style={{ width: `${stats.red.total ? (stats.red.s1 / stats.red.total) * 100 : 0}%`, backgroundColor: "var(--color-red)" }}></span>
-                        <span className="bar-s2" title="Ngăn 2" style={{ width: `${stats.red.total ? (stats.red.s2 / stats.red.total) * 100 : 0}%`, backgroundColor: "var(--color-red)" }}></span>
-                        <span className="bar-s3" title="Ngăn 3" style={{ width: `${stats.red.total ? (stats.red.s3 / stats.red.total) * 100 : 0}%`, backgroundColor: "var(--color-red)" }}></span>
-                      </div>
-                    </div>
-                    <div className="stat-info-line">
-                      <span>Tổng: <b>{stats.red.total}</b> thẻ</span>
-                      <span>Đã vững: <b>{stats.red.mastered}</b></span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Box status row */}
-              <div className="dashboard-row">
-                <div className="dashboard-col col-60 glass-panel">
-                  <div className="panel-header">
-                    <h3><i className="fa-solid fa-box-open text-primary"></i> Trạng thái các hộp thẻ (Hộp Leitner)</h3>
-                    <span className="panel-header-action text-muted">Lịch giãn cách ôn tập</span>
-                  </div>
-                  <div className="boxes-status-container">
-                    <div className="box-item">
-                      <div className="box-badge-num">1</div>
-                      <div className="box-details">
-                        <h4>Ngăn 1: Ôn hàng ngày</h4>
-                        <p className="text-muted">Kiến thức mới nạp / Dễ quên</p>
-                        <div className="progress-bar-container">
-                          <div className="progress-fill" style={{ width: `${stats.total ? (stats.box1 / stats.total) * 100 : 0}%` }}></div>
-                        </div>
-                      </div>
-                      <div className="box-count-badge">{stats.box1}</div>
+                  <h2 style={{ fontSize: "2rem", color: "#1e3a8a", marginBottom: "1rem", fontWeight: 800 }}>
+                    👋 Chào mừng bạn đến với AI Retrieval Box!
+                  </h2>
+                  <div style={{ fontSize: "1.15rem", lineHeight: "1.7", display: "flex", flexDirection: "column", gap: "1.2rem", color: "#2d3748" }}>
+                    <p>Hộp lưu trữ thẻ học Leitner của bạn hiện tại đang trống. Hãy bắt đầu xây dựng kho tri thức cá nhân hóa theo các bước đơn giản sau:</p>
+                    
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", padding: "1rem 1.5rem", background: "rgba(254, 243, 199, 0.5)", border: "2px dashed #d97706", borderRadius: "12px" }}>
+                      <span>1️⃣ Click vào nút <b>Khởi tạo Thẻ học AI ngay 🚀</b> ở dưới.</span>
+                      <span>2️⃣ Tại tab <b>Số hóa & AI OCR</b>, chọn tab phụ <b>Nhập văn bản ✍️</b>.</span>
+                      <span>3️⃣ Dán nội dung tài liệu ôn tập của bạn vào ô soạn thảo văn bản.</span>
+                      <span>4️⃣ Nhấp <b>Khởi tạo Lộ trình học tập AI</b>. AI sẽ phân tích tài liệu và tự động tạo Lộ trình chặng Bloom kèm 3 thẻ học.</span>
+                      <span>5️⃣ Kiểm duyệt lại nội dung thẻ qua <b>Verification Layer (Popup xác nhận)</b> và lưu trữ chúng vào hệ thống Leitner chính thức!</span>
                     </div>
 
-                    <div className="box-item">
-                      <div className="box-badge-num bg-yellow">2</div>
-                      <div className="box-details">
-                        <h4>Ngăn 2: Ôn 2-3 ngày/lần</h4>
-                        <p className="text-muted">Kiến thức tạm nhớ ổn định</p>
-                        <div className="progress-bar-container">
-                          <div className="progress-fill bg-yellow" style={{ width: `${stats.total ? (stats.box2 / stats.total) * 100 : 0}%` }}></div>
-                        </div>
-                      </div>
-                      <div className="box-count-badge">{stats.box2}</div>
-                    </div>
+                    <p style={{ fontStyle: "italic", color: "#4b5563", marginTop: "0.5rem" }}>
+                      💡 Tip: Sau khi thêm thẻ, bạn có thể quay lại đây để theo dõi biểu đồ phân bố và ôn tập định kỳ chống đứt gãy kiến thức.
+                    </p>
 
-                    <div className="box-item">
-                      <div className="box-badge-num bg-green">3</div>
-                      <div className="box-details">
-                        <h4>Ngăn 3: Ôn 7-10 ngày/lần</h4>
-                        <p className="text-muted">Kiến thức bền vững dài hạn</p>
-                        <div className="progress-bar-container">
-                          <div className="progress-fill bg-green" style={{ width: `${stats.total ? (stats.box3 / stats.total) * 100 : 0}%` }}></div>
-                        </div>
-                      </div>
-                      <div className="box-count-badge">{stats.box3}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="dashboard-col col-40 glass-panel">
-                  <div className="panel-header">
-                    <h3><i className="fa-solid fa-heart-pulse text-red"></i> Trạng thái điều hướng Flow</h3>
-                  </div>
-                  <div className="flow-card">
-                    <div className="flow-status">
-                      <i className="fa-solid fa-route text-cyan flow-route-icon"></i>
-                      <div>
-                        <h4>
-                          {mood === "tired" || mood === "stressed" ? "Chế độ Thích ứng: Khởi động Nhẹ" : mood === "excited" || mood === "focused" ? "Chế độ Thích ứng: Đột phá Trí tuệ" : "Chế độ Thích ứng: Phân bổ Interleaving"}
-                        </h4>
-                        <p className="text-muted">
-                          {mood === "tired" || mood === "stressed" ? "AI ưu tiên đẩy thẻ xanh (lý thuyết nhẹ nhàng) lên trước giúp bạn thư thái học tập." : mood === "excited" || mood === "focused" ? "Hào hứng cao độ! AI đẩy các thẻ đỏ và vàng thử thách tư duy phân tích lên trước." : "Cảm xúc cân bằng, AI trộn đều các hộp thẻ theo lộ trình."}
-                        </p>
-                      </div>
-                    </div>
-                    {triggerBurnout && (
-                      <div className="burnout-indicator alert-box">
-                        <i className="fa-solid fa-shield-halved text-orange animate-pulse"></i>
-                        <span><b>Chống Burnout:</b> Số thẻ khó quá tải! Đã tự động dời các thẻ dễ sang ngày mai.</span>
-                      </div>
-                    )}
-                    {diffDays <= 30 && settings.examMode && (
-                      <div className="exam-mode-indicator alert-box border-cyan">
-                        <i className="fa-solid fa-gauge-high text-cyan"></i>
-                        <span><b>Nén lộ trình kì thi:</b> Khoảng thời gian ôn tập được rút ngắn tối đa.</span>
-                      </div>
-                    )}
-                    <div className="session-summary-box">
-                      <h4>Bài học kế tiếp đề xuất:</h4>
-                      <div className={`suggested-deck-badge ${mood === "tired" || mood === "stressed" ? "border-green" : mood === "excited" || mood === "focused" ? "border-red" : "border-yellow"}`}>
-                        {mood === "tired" || mood === "stressed" ? (
-                          <span><span className="badge badge-green">Thẻ xanh</span> Thuyết lý thuyết & Công thức cốt lõi.</span>
-                        ) : mood === "excited" || mood === "focused" ? (
-                          <span><span className="badge badge-red">Thẻ đỏ</span> Tổng hợp mở rộng kiến thức liên chương.</span>
-                        ) : (
-                          <span><span className="badge badge-yellow">Thẻ vàng</span> Bài tập vận dụng đơn lẻ Chương 1.</span>
-                        )}
-                      </div>
-                      <button className="btn btn-secondary btn-full btn-sm" onClick={() => setMoodModalOpen(true)}>
-                        <i className="fa-solid fa-face-smile"></i> Cập nhật cảm xúc học tập
+                    <div style={{ marginTop: "1rem" }}>
+                      <button className="btn btn-primary" onClick={() => { setActiveTab("ocr"); setOcrInputType("text"); }} style={{ padding: "0.85rem 2.2rem", fontSize: "1.1rem" }}>
+                        Khởi tạo Thẻ học AI ngay 🚀
                       </button>
                     </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="welcome-banner">
+                    <div className="welcome-text">
+                      <h1>Chào mừng quay trở lại ôn tập! 👋</h1>
+                      <p>Mỗi ngày dành ra 30 phút rèn luyện để xây dựng cấu trúc não bộ bền vững, chống đứt gãy nhận thức.</p>
+                      <div className="banner-cta">
+                        <button className="btn btn-primary btn-glow" onClick={() => setActiveTab("retrieval")}>
+                          <i className="fa-solid fa-bolt"></i> Ôn tập nhanh theo cảm xúc
+                        </button>
+                      </div>
+                    </div>
+                    <div className="welcome-graphics">
+                      <div className="retrieval-box-visual">
+                        <div className="box-layer layer-red" title="Synthesize"></div>
+                        <div className="box-layer layer-yellow" title="Apply"></div>
+                        <div className="box-layer layer-green" title="Recall"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Overall Mastery Tracker */}
+                  {(() => {
+                    const totalCardsCount = cards.length;
+                    const masteredCardsCount = cards.filter(c => c.box === 3).length;
+                    const overallProgress = totalCardsCount > 0 ? Math.round((masteredCardsCount / totalCardsCount) * 100) : 0;
+                    
+                    return (
+                      <div className="glass-panel notebook-paper" style={{ padding: "1.25rem 1.5rem", marginBottom: "1.25rem", border: "3px solid #2d3748", boxShadow: "4px 4px 0px #2d3748", position: "relative" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                          <span style={{ fontWeight: 800, fontSize: "1.1rem", color: "#1e3a8a", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            ✨ Tiến trình làm chủ kiến thức hiện tại: {overallProgress}%
+                          </span>
+                          <span style={{ fontSize: "0.9rem", fontWeight: "700", color: "#475569" }}>
+                            Đã thuộc: {masteredCardsCount}/{totalCardsCount} thẻ
+                          </span>
+                        </div>
+                        <div style={{ width: "100%", height: "20px", backgroundColor: "#e2e8f0", borderRadius: "10px", overflow: "hidden", border: "2.5px solid #2d3748" }}>
+                          <div className="progress-fill" style={{ height: "100%", width: `${overallProgress}%`, backgroundColor: "#10b981", transition: "width 0.8s ease-out" }}></div>
+                        </div>
+                        
+                        {/* Motivational Speech bubble from AI Tutor avatar */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "1rem" }}>
+                          <div className="avatar animate-bounce" style={{ width: "32px", height: "32px", minWidth: "32px", fontSize: "0.9rem", backgroundColor: "#3b82f6" }}>🤖</div>
+                          <div className="speech-bubble tutor-bubble" style={{ margin: 0, padding: "0.5rem 1rem", fontSize: "0.9rem", flex: 1 }}>
+                            {overallProgress === 100 
+                              ? "Xuất sắc! Bạn đã làm chủ 100% tài liệu ôn tập! Hãy tiếp tục duy trì để có phản xạ tốt nhất nhé!"
+                              : overallProgress >= 50
+                              ? `Tuyệt vời! Bạn đã vững hơn một nửa kiến thức rồi (${overallProgress}%). Tiếp tục phát huy nào!`
+                              : totalCardsCount > 0
+                              ? "Cố lên học viên! Mỗi ngày luyện 10-15 phút ôn tập ngẫu nhiên sẽ đẩy nhanh tốc độ chuyển nhớ dài hạn đấy!"
+                              : "Hãy dán tài liệu của bạn vào mục OCR để bắt đầu tạo các chặng lộ trình kiến thức của riêng mình nhé!"
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Active Roadmaps Tracker Grid */}
+                  {savedRoadmaps.length > 0 && (
+                    <div className="glass-panel" style={{ padding: "1.25rem", marginBottom: "1.25rem", border: "3px solid #2d3748", boxShadow: "4px 4px 0px #2d3748", backgroundColor: "#fffbeb" }}>
+                      <h3 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#1e3a8a", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        🗺️ Các lộ trình đang học tập ({savedRoadmaps.length})
+                      </h3>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
+                        {savedRoadmaps.map(rm => {
+                          let masteredCount = 0;
+                          rm.milestones.forEach(m => {
+                            const cardInDeck = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+                            if (cardInDeck && cardInDeck.box === 3) masteredCount++;
+                          });
+                          const progress = Math.round((masteredCount / 3) * 100);
+
+                          return (
+                            <div key={rm.id} className="notebook-preview-box" style={{ padding: "0.75rem 1rem", backgroundColor: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                              <div>
+                                <h4 style={{ fontSize: "0.95rem", fontWeight: "700", margin: "0 0 0.25rem 0", color: "#2d3748" }}>{rm.topicName}</h4>
+                                <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+                                  Độ khó: <b>{rm.difficulty}</b> | Tiến độ chặng: <b>{masteredCount}/3 chặng</b>
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                                  <div style={{ flex: 1, height: "8px", backgroundColor: "#e2e8f0", borderRadius: "4px", overflow: "hidden", border: "1px solid #2d3748" }}>
+                                    <div className="progress-fill" style={{ height: "100%", width: `${progress}%`, backgroundColor: progress === 100 ? "#10b981" : "#f59e0b" }}></div>
+                                  </div>
+                                  <span style={{ fontSize: "0.8rem", fontWeight: "700" }}>{progress}%</span>
+                                </div>
+                                <button className="btn btn-secondary btn-full btn-sm" style={{ padding: "4px" }} onClick={() => {
+                                  setActiveMapId(rm.id);
+                                  setActiveTab("knowledge-map");
+                                  setSelectedMapNodeId(null);
+                                }}>
+                                  Vào bản đồ liên kết 🗺️
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick stats distribution grids */}
+                  <div className="stats-grid">
+                    {/* Green card recall */}
+                    <div className="stat-card card-glow-green">
+                      <div className="stat-header">
+                        <span className="badge badge-green">Recall</span>
+                        <i className="fa-solid fa-circle-check text-green"></i>
+                      </div>
+                      <div className="stat-body">
+                        <h3>Thẻ Xanh</h3>
+                        <p className="stat-desc">Định nghĩa & Công thức</p>
+                        <div className="box-distribution">
+                          <div className="dist-bar">
+                            <span className="bar-s1" title="Ngăn 1" style={{ width: `${stats.green.total ? (stats.green.s1 / stats.green.total) * 100 : 0}%`, backgroundColor: "var(--color-green)" }}></span>
+                            <span className="bar-s2" title="Ngăn 2" style={{ width: `${stats.green.total ? (stats.green.s2 / stats.green.total) * 100 : 0}%`, backgroundColor: "var(--color-green)" }}></span>
+                            <span className="bar-s3" title="Ngăn 3" style={{ width: `${stats.green.total ? (stats.green.s3 / stats.green.total) * 100 : 0}%`, backgroundColor: "var(--color-green)" }}></span>
+                          </div>
+                        </div>
+                        <div className="stat-info-line">
+                          <span>Tổng: <b>{stats.green.total}</b> thẻ</span>
+                          <span>Đã vững: <b>{stats.green.mastered}</b></span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Yellow card apply */}
+                    <div className="stat-card card-glow-yellow">
+                      <div className="stat-header">
+                        <span className="badge badge-yellow">Apply</span>
+                        <i className="fa-solid fa-chart-simple text-yellow"></i>
+                      </div>
+                      <div className="stat-body">
+                        <h3>Thẻ Vàng</h3>
+                        <p className="stat-desc">Vận dụng đơn lẻ</p>
+                        <div className="box-distribution">
+                          <div className="dist-bar">
+                            <span className="bar-s1" title="Ngăn 1" style={{ width: `${stats.yellow.total ? (stats.yellow.s1 / stats.yellow.total) * 100 : 0}%`, backgroundColor: "var(--color-yellow)" }}></span>
+                            <span className="bar-s2" title="Ngăn 2" style={{ width: `${stats.yellow.total ? (stats.yellow.s2 / stats.yellow.total) * 100 : 0}%`, backgroundColor: "var(--color-yellow)" }}></span>
+                            <span className="bar-s3" title="Ngăn 3" style={{ width: `${stats.yellow.total ? (stats.yellow.s3 / stats.yellow.total) * 100 : 0}%`, backgroundColor: "var(--color-yellow)" }}></span>
+                          </div>
+                        </div>
+                        <div className="stat-info-line">
+                          <span>Tổng: <b>{stats.yellow.total}</b> thẻ</span>
+                          <span>Đã vững: <b>{stats.yellow.mastered}</b></span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Red card synthesize */}
+                    <div className="stat-card card-glow-red">
+                      <div className="stat-header">
+                        <span className="badge badge-red">Synthesize</span>
+                        <i className="fa-solid fa-circle-nodes text-red"></i>
+                      </div>
+                      <div className="stat-body">
+                        <h3>Thẻ Đỏ</h3>
+                        <p className="stat-desc">Tổng hợp liên chương</p>
+                        <div className="box-distribution">
+                          <div className="dist-bar">
+                            <span className="bar-s1" title="Ngăn 1" style={{ width: `${stats.red.total ? (stats.red.s1 / stats.red.total) * 100 : 0}%`, backgroundColor: "var(--color-red)" }}></span>
+                            <span className="bar-s2" title="Ngăn 2" style={{ width: `${stats.red.total ? (stats.red.s2 / stats.red.total) * 100 : 0}%`, backgroundColor: "var(--color-red)" }}></span>
+                            <span className="bar-s3" title="Ngăn 3" style={{ width: `${stats.red.total ? (stats.red.s3 / stats.red.total) * 100 : 0}%`, backgroundColor: "var(--color-red)" }}></span>
+                          </div>
+                        </div>
+                        <div className="stat-info-line">
+                          <span>Tổng: <b>{stats.red.total}</b> thẻ</span>
+                          <span>Đã vững: <b>{stats.red.mastered}</b></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Box status row */}
+                  <div className="dashboard-row">
+                    {/* LEFT PANEL: Flow Status (Prioritized!) */}
+                    <div className="dashboard-col glass-panel" style={{ flex: 1, border: "3px solid #3b82f6", boxShadow: "4px 4px 0px #2d3748" }}>
+                      <div className="panel-header" style={{ borderBottom: "2px dashed #3b82f6", paddingBottom: "0.5rem" }}>
+                        <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <i className="fa-solid fa-heart-pulse text-red animate-pulse"></i> 
+                          Trạng thái điều hướng Flow 
+                          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#10b981", display: "inline-block", boxShadow: "0 0 8px #10b981" }} className="animate-pulse"></span>
+                        </h3>
+                      </div>
+                      <div className="flow-card" style={{ marginTop: "1rem" }}>
+                        <div className="flow-status" style={{ backgroundColor: "#f0fdf4", border: "2px solid #2d3748", borderRadius: "12px", padding: "0.75rem", display: "flex", gap: "0.75rem", marginBottom: "0.75rem", boxShadow: "2px 2px 0px #2d3748" }}>
+                          <i className="fa-solid fa-route text-cyan flow-route-icon" style={{ fontSize: "1.5rem" }}></i>
+                          <div>
+                            <h4 style={{ margin: 0, fontWeight: 800, color: "#1e3a8a" }}>
+                              {mood === "tired" || mood === "stressed" ? "Chế độ Thích ứng: Khởi động Nhẹ" : mood === "excited" || mood === "focused" ? "Chế độ Thích ứng: Đột phá Trí tuệ" : "Chế độ Thích ứng: Phân bổ Interleaving"}
+                            </h4>
+                            <p className="text-muted" style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", lineHeight: 1.4 }}>
+                              {mood === "tired" || mood === "stressed" ? "AI ưu tiên đẩy thẻ xanh (lý thuyết nhẹ nhàng) lên trước giúp bạn thư thái học tập." : mood === "excited" || mood === "focused" ? "Hào hứng cao độ! AI đẩy các thẻ đỏ và vàng thử thách tư duy phân tích lên trước." : "Cảm xúc cân bằng, AI trộn đều các hộp thẻ theo lộ trình."}
+                            </p>
+                          </div>
+                        </div>
+                        {triggerBurnout && (
+                          <div className="burnout-indicator alert-box" style={{ margin: "0.5rem 0" }}>
+                            <i className="fa-solid fa-shield-halved text-orange animate-pulse"></i>
+                            <span><b>Chống Burnout:</b> Số thẻ khó quá tải! Đã tự động dời các thẻ dễ sang ngày mai.</span>
+                          </div>
+                        )}
+                        {diffDays <= 30 && settings.examMode && (
+                          <div className="exam-mode-indicator alert-box border-cyan" style={{ margin: "0.5rem 0" }}>
+                            <i className="fa-solid fa-gauge-high text-cyan"></i>
+                            <span><b>Nén lộ trình kì thi:</b> Khoảng thời gian ôn tập được rút ngắn tối đa.</span>
+                          </div>
+                        )}
+                        <div className="session-summary-box" style={{ marginTop: "1rem" }}>
+                          <h4 style={{ fontWeight: 800, fontSize: "0.95rem", marginBottom: "0.5rem" }}>Bài học kế tiếp đề xuất:</h4>
+                          <div className={`suggested-deck-badge ${mood === "tired" || mood === "stressed" ? "border-green" : mood === "excited" || mood === "focused" ? "border-red" : "border-yellow"}`} style={{ display: "inline-block", width: "100%", padding: "0.5rem", borderRadius: "8px", border: "2px solid #2d3748", boxShadow: "2px 2px 0px #2d3748", marginBottom: "0.75rem", boxSizing: "border-box" }}>
+                            {mood === "tired" || mood === "stressed" ? (
+                              <span><span className="badge badge-green">Thẻ xanh</span> Thuyết lý thuyết & Công thức cốt lõi.</span>
+                            ) : mood === "excited" || mood === "focused" ? (
+                              <span><span className="badge badge-red">Thẻ đỏ</span> Tổng hợp mở rộng kiến thức liên chương.</span>
+                            ) : (
+                              <span><span className="badge badge-yellow">Thẻ vàng</span> Bài tập vận dụng đơn lẻ Chương 1.</span>
+                            )}
+                          </div>
+                          <button className="btn btn-secondary btn-full btn-sm" onClick={() => setMoodModalOpen(true)}>
+                            <i className="fa-solid fa-face-smile"></i> Cập nhật cảm xúc học tập
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* RIGHT PANEL: Leitner Box Status */}
+                    <div className="dashboard-col glass-panel" style={{ flex: 1, border: "3px solid #2d3748", boxShadow: "4px 4px 0px #2d3748" }}>
+                      <div className="panel-header" style={{ borderBottom: "2px dashed #2d3748", paddingBottom: "0.5rem" }}>
+                        <h3><i className="fa-solid fa-box-open text-primary"></i> Trạng thái các hộp thẻ (Hộp Leitner)</h3>
+                      </div>
+                      <div className="boxes-status-container" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
+                        <div className="box-item" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                            <div className="box-badge-num" style={{ width: "32px", height: "32px", minWidth: "32px" }}>1</div>
+                            <div className="box-details">
+                              <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>Ngăn 1: Ôn hàng ngày</h4>
+                              <p className="text-muted" style={{ margin: 0, fontSize: "0.8rem" }}>Kiến thức mới nạp / Dễ quên</p>
+                              <div className="progress-bar-container" style={{ marginTop: "0.25rem" }}>
+                                <div className="progress-fill" style={{ width: `${stats.total ? (stats.box1 / stats.total) * 100 : 0}%` }}></div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="box-count-badge" style={{ padding: "4px 10px", fontSize: "0.95rem" }}>{stats.box1}</div>
+                        </div>
+
+                        <div className="box-item" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                            <div className="box-badge-num bg-yellow" style={{ width: "32px", height: "32px", minWidth: "32px" }}>2</div>
+                            <div className="box-details">
+                              <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>Ngăn 2: Ôn 2-3 ngày/lần</h4>
+                              <p className="text-muted" style={{ margin: 0, fontSize: "0.8rem" }}>Kiến thức tạm nhớ ổn định</p>
+                              <div className="progress-bar-container" style={{ marginTop: "0.25rem" }}>
+                                <div className="progress-fill bg-yellow" style={{ width: `${stats.total ? (stats.box2 / stats.total) * 100 : 0}%` }}></div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="box-count-badge" style={{ padding: "4px 10px", fontSize: "0.95rem" }}>{stats.box2}</div>
+                        </div>
+
+                        <div className="box-item" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                            <div className="box-badge-num bg-green" style={{ width: "32px", height: "32px", minWidth: "32px" }}>3</div>
+                            <div className="box-details">
+                              <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>Ngăn 3: Ôn 7-10 ngày/lần</h4>
+                              <p className="text-muted" style={{ margin: 0, fontSize: "0.8rem" }}>Kiến thức bền vững dài hạn</p>
+                              <div className="progress-bar-container" style={{ marginTop: "0.25rem" }}>
+                                <div className="progress-fill bg-green" style={{ width: `${stats.total ? (stats.box3 / stats.total) * 100 : 0}%` }}></div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="box-count-badge" style={{ padding: "4px 10px", fontSize: "0.95rem" }}>{stats.box3}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Study Guide Notebook Sticker */}
+                  <div className="glass-panel" style={{ padding: "1.25rem", marginTop: "1.5rem", border: "3px dashed #10b981", borderRadius: "12px", backgroundColor: "#f0fdf4", boxShadow: "4px 4px 0px #2d3748" }}>
+                    <h3 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#065f46", margin: "0 0 0.75rem 0", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      📚 Hướng dẫn Số hóa tài liệu học bằng AI OCR
+                    </h3>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", fontSize: "0.85rem", lineHeight: "1.5", color: "#047857" }}>
+                      <div style={{ padding: "0.75rem", background: "#fff", border: "2px solid #2d3748", borderRadius: "8px", boxShadow: "2px 2px 0px #2d3748" }}>
+                        <div style={{ fontSize: "1.1rem", marginBottom: "0.25rem" }}>1️⃣ Vào Tab OCR 📂</div>
+                        Nhấp chọn tab <b>Số hóa & AI OCR</b> trên thanh menu điều hướng bên trái.
+                      </div>
+                      <div style={{ padding: "0.75rem", background: "#fff", border: "2px solid #2d3748", borderRadius: "8px", boxShadow: "2px 2px 0px #2d3748" }}>
+                        <div style={{ fontSize: "1.1rem", marginBottom: "0.25rem" }}>2️⃣ Nhập Tài liệu ✍️</div>
+                        Chọn <b>Nhập văn bản</b> (hoặc Kéo File) rồi dán nội dung bài học/câu hỏi muốn quét.
+                      </div>
+                      <div style={{ padding: "0.75rem", background: "#fff", border: "2px solid #2d3748", borderRadius: "8px", boxShadow: "2px 2px 0px #2d3748" }}>
+                        <div style={{ fontSize: "1.1rem", marginBottom: "0.25rem" }}>3️⃣ AI Sinh lộ trình 🤖</div>
+                        Nhấn <b>Khởi tạo Lộ trình học tập</b>. AI sẽ tự động lập 3 chặng bài học và thẻ tương ứng.
+                      </div>
+                      <div style={{ padding: "0.75rem", background: "#fff", border: "2px solid #2d3748", borderRadius: "8px", boxShadow: "2px 2px 0px #2d3748" }}>
+                        <div style={{ fontSize: "1.1rem", marginBottom: "0.25rem" }}>4️⃣ Duyệt & Ôn tập 🚀</div>
+                        Duyệt câu hỏi ở Verification Layer, lưu thẻ và mở tab **Bản đồ tri thức** để học!
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </section>
           )}
 
           {/* TAB: RETRIEVAL STUDY PANEL */}
           {activeTab === "retrieval" && (
             <section className="tab-content active">
-              <div className="study-layout">
-                <div className="study-controls-panel glass-panel">
-                  <h3>Bộ lọc ôn tập</h3>
-                  <div className="control-group">
-                    <label htmlFor="filter-chapter">Chương học:</label>
-                    <select 
-                      id="filter-chapter" 
-                      className="btn-select"
-                      value={filterChapter}
-                      onChange={(e) => setFilterChapter(e.target.value)}
-                    >
-                      <option value="all">-- Tất cả chương --</option>
-                      {INITIAL_SUBJECTS[activeSubject]?.chapters.map(ch => (
-                        <option key={ch.id} value={ch.id}>{ch.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="control-group">
-                    <label>Phân loại thẻ (Bloom):</label>
-                    <div className="difficulty-checkboxes">
-                      <label className="diff-chk-label text-green">
-                        <input type="checkbox" checked={filterBloom.green} onChange={(e) => setFilterBloom({...filterBloom, green: e.target.checked})} />
-                        <span>Recall (Xanh)</span>
-                      </label>
-                      <label className="diff-chk-label text-yellow">
-                        <input type="checkbox" checked={filterBloom.yellow} onChange={(e) => setFilterBloom({...filterBloom, yellow: e.target.checked})} />
-                        <span>Apply (Vàng)</span>
-                      </label>
-                      <label className="diff-chk-label text-red">
-                        <input type="checkbox" checked={filterBloom.red} onChange={(e) => setFilterBloom({...filterBloom, red: e.target.checked})} />
-                        <span>Synthesize (Đỏ)</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="control-group">
-                    <label>Ngăn tủ (Leitner):</label>
-                    <div className="box-checkboxes">
-                      <label>
-                        <input type="checkbox" checked={filterBox.box1} onChange={(e) => setFilterBox({...filterBox, box1: e.target.checked})} />
-                        <span>Ngăn 1</span>
-                      </label>
-                      <label>
-                        <input type="checkbox" checked={filterBox.box2} onChange={(e) => setFilterBox({...filterBox, box2: e.target.checked})} />
-                        <span>Ngăn 2</span>
-                      </label>
-                      <label>
-                        <input type="checkbox" checked={filterBox.box3} onChange={(e) => setFilterBox({...filterBox, box3: e.target.checked})} />
-                        <span>Ngăn 3</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="deck-stats">
-                    <div className="deck-stat-item">
-                      <span className="lbl">Hôm nay cần ôn:</span>
-                      <span className="val text-primary">{stats.due}</span>
-                    </div>
-                    <div className="deck-stat-item">
-                      <span className="lbl">Tổng trong bộ lọc:</span>
-                      <span className="val">{filteredQueue.length}</span>
-                    </div>
-                  </div>
-                  <button className="btn btn-primary btn-full" onClick={() => { setForcePracticeAll(false); rebuildStudyQueue(); }}>
-                    <i className="fa-solid fa-filter"></i> Áp dụng bộ lọc
-                  </button>
-                </div>
-
+              <div className="study-layout" style={{ justifyContent: "center" }}>
                 <div className="study-arena">
                   {filteredQueue.length === 0 ? (
                     <div className="empty-arena glass-panel" id="empty-arena-view">
@@ -1612,6 +1810,11 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                             </div>
                             <div className="card-body">
                               <div className="card-question-text">{activeCard.question}</div>
+                              {showHint && (
+                                <div className="notebook-hint-box" style={{ marginBottom: "1rem" }}>
+                                  <span>💡 Gợi ý lý thuyết:</span> {activeCard.modelAnswer.split(/[.!?]/)[0]}...
+                                </div>
+                              )}
                               <div className="card-input-container">
                                 {activeCard.type === "green" ? (
                                   <div className="quiz-options-grid">
@@ -1644,9 +1847,37 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                             </div>
                             <div className="card-footer">
                               <span className="ref-link">{activeCard.reference}</span>
-                              <button className="btn btn-secondary btn-sm" onClick={handleFlipCard}>
-                                Xem đáp án & Gợi ý <i className="fa-solid fa-arrow-rotate-right"></i>
-                              </button>
+                              {activeCard.type === 'green' ? (
+                                <button className="btn btn-secondary btn-sm" onClick={handleFlipCard}>
+                                  Xem đáp án & Gợi ý <i className="fa-solid fa-arrow-rotate-right"></i>
+                                </button>
+                              ) : secondsElapsed < 30 ? (
+                                <button className="btn btn-secondary btn-sm" disabled style={{ opacity: 0.6, cursor: "not-allowed" }}>
+                                  ⏳ Suy nghĩ thêm... (Hiện gợi ý sau {30 - secondsElapsed}s)
+                                </button>
+                              ) : secondsElapsed < 45 ? (
+                                <div style={{ display: "flex", gap: "0.5rem" }}>
+                                  {!showHint && (
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setShowHint(true)}>
+                                      Gợi ý 💡
+                                    </button>
+                                  )}
+                                  <button className="btn btn-secondary btn-sm" disabled style={{ opacity: 0.6, cursor: "not-allowed" }}>
+                                    ⏳ Xem Đáp án (sau {45 - secondsElapsed}s)
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", gap: "0.5rem" }}>
+                                  {!showHint && (
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setShowHint(true)}>
+                                      Gợi ý 💡
+                                    </button>
+                                  )}
+                                  <button className="btn btn-secondary btn-sm" onClick={handleFlipCard}>
+                                    Xem đáp án <i className="fa-solid fa-arrow-rotate-right"></i>
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -1729,107 +1960,219 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
           {activeTab === "ocr" && (
             <section className="tab-content active">
               <div className="ocr-layout">
-                <div className="ocr-uploader glass-panel">
-                  <div className="panel-header">
-                    <h3><i className="fa-solid fa-expand text-primary"></i> Sơ đồ hóa Lộ trình học tập & Số hóa</h3>
+                <div className="ocr-uploader notebook-paper">
+                  <div className="spiral-rings">
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
                   </div>
-                  {ocrStatus === "idle" ? (
-                    <div className="drag-zone" onClick={() => document.getElementById("react-ocr-file")?.click()}>
-                      <i className="fa-solid fa-folder-open cloud-icon"></i>
-                      <h4>Kéo & thả tài liệu hoặc chọn tệp tin</h4>
-                      <p className="text-muted">Định dạng hỗ trợ: PDF, DOCX, TXT, PNG, JPG (Tối đa 10MB)</p>
-                      <input type="file" id="react-ocr-file" className="hidden" accept="image/*,.pdf,.docx,.txt" onChange={handleSelectOCRFile} />
-                    </div>
-                  ) : (
+                  
+                  <div className="notebook-tab-header">
+                    <button className={`notebook-tab-btn ${ocrInputType === 'file' ? 'active' : ''}`} onClick={() => setOcrInputType('file')}>
+                      📂 Tải tệp tin
+                    </button>
+                    <button className={`notebook-tab-btn ${ocrInputType === 'text' ? 'active' : ''}`} onClick={() => setOcrInputType('text')}>
+                      ✍️ Nhập văn bản
+                    </button>
+                  </div>
+
+                  {ocrInputType === 'file' && (
+                    ocrStatus === "idle" ? (
+                      <div className="drag-zone" onClick={() => document.getElementById("react-ocr-file")?.click()} style={{ border: "2px dashed #2d3748", backgroundColor: "transparent" }}>
+                        <i className="fa-solid fa-folder-open cloud-icon" style={{ color: "#2d3748" }}></i>
+                        <h4 style={{ color: "#2d3748" }}>Kéo & thả tài liệu hoặc chọn tệp tin</h4>
+                        <p className="text-muted" style={{ color: "#4b5563" }}>Định dạng hỗ trợ: PDF, DOCX, TXT, PNG, JPG (Tối đa 10MB)</p>
+                        <input type="file" id="react-ocr-file" className="hidden" accept="image/*,.pdf,.docx,.txt" onChange={handleSelectOCRFile} />
+                      </div>
+                    ) : (
+                      <div className="uploaded-preview-container">
+                        <div className="scanner-window" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "180px", border: "2px dashed #2d3748", backgroundColor: "rgba(0,0,0,0.05)" }}>
+                          {ocrPreviewSrc ? (
+                            <img src={ocrPreviewSrc} alt="OCR Preview" style={{ width: "100%", height: "auto", maxHeight: "160px", objectFit: "contain", opacity: 0.8 }} />
+                          ) : (
+                            <div style={{ padding: "2rem", textAlign: "center" }}>
+                              <i className="fa-solid fa-file-invoice text-cyan" style={{ fontSize: "2.5rem", marginBottom: "0.75rem", color: "#1e3a8a" }}></i>
+                              <p className="text-xs" style={{ color: "#2d3748" }}>{ocrFileName}</p>
+                            </div>
+                          )}
+                          <div className={`scan-laser ${ocrStatus === "scanning" ? "scanning" : ""}`}></div>
+                        </div>
+                        <div className="upload-file-details" style={{ color: "#2d3748" }}>
+                          <span>{ocrFileName}</span>
+                          <span className="text-muted" style={{ color: "#6b7280" }}>{ocrFileSize}</span>
+                        </div>
+                        <button className="notebook-btn" onClick={triggerOCRScan} disabled={ocrStatus === "scanning"} style={{ width: "100%" }}>
+                          <i className="fa-solid fa-wand-magic-sparkles"></i> Khởi tạo Lộ trình học tập AI
+                        </button>
+                      </div>
+                    )
+                  )}
+
+                  {ocrInputType === 'text' && (
                     <div className="uploaded-preview-container">
-                      <div className="scanner-window" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "180px", border: "1px dashed rgba(255,255,255,0.1)" }}>
-                        {ocrPreviewSrc ? (
-                          <img src={ocrPreviewSrc} alt="OCR Preview" style={{ width: "100%", height: "auto", maxHeight: "160px", objectFit: "contain" }} />
-                        ) : (
-                          <div style={{ padding: "2rem", textAlign: "center" }}>
-                            <i className="fa-solid fa-file-invoice text-cyan" style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}></i>
-                            <p className="text-xs">{ocrFileName}</p>
-                          </div>
-                        )}
-                        <div className={`scan-laser ${ocrStatus === "scanning" ? "scanning" : ""}`}></div>
-                      </div>
-                      <div className="upload-file-details">
-                        <span>{ocrFileName}</span>
-                        <span className="text-muted">{ocrFileSize}</span>
-                      </div>
-                      <button className="btn btn-primary btn-full btn-glow" onClick={triggerOCRScan} disabled={ocrStatus === "scanning"}>
+                      <textarea 
+                        className="notebook-textarea"
+                        value={ocrTextContent}
+                        onChange={(e) => {
+                          setOcrTextContent(e.target.value);
+                          setActiveOCRBase64(e.target.value);
+                          setActiveOCRMimeType("text/plain");
+                          setOcrFileName("Văn bản tự nhập");
+                          setOcrFileSize(`${(e.target.value.length / 1024).toFixed(1)} KB`);
+                          setOcrPreviewSrc("");
+                          if (ocrStatus === "done") {
+                            setOcrStatus("idle");
+                            setActiveRoadmap(null);
+                          }
+                        }}
+                        placeholder="Hãy dán hoặc tự nhập tài liệu học tập của bạn vào đây (ví dụ: các định nghĩa, công thức hóa học, bài giảng vật lý...). AI sẽ phân tích và lập lộ trình chặng kèm thẻ Leitner cho bạn!"
+                      />
+                      <div className={`scan-laser ${ocrStatus === "scanning" ? "scanning" : ""}`} style={{ position: "relative", height: "4px", marginTop: "4px" }}></div>
+                      <button className="notebook-btn notebook-btn-success" onClick={triggerOCRScan} disabled={ocrStatus === "scanning" || !ocrTextContent.trim()} style={{ width: "100%", marginTop: "0.5rem" }}>
                         <i className="fa-solid fa-wand-magic-sparkles"></i> Khởi tạo Lộ trình học tập AI
                       </button>
                     </div>
                   )}
 
-                  <div className="ocr-simulator-presets">
-                    <label>Tài liệu mẫu chuẩn hóa:</label>
-                    <div className="preset-buttons">
-                      <button className={`btn btn-secondary btn-xs ${ocrPresetsSel === "chemistry-este" ? "active" : ""}`} onClick={() => handlePresetSelect("chemistry-este")}>
+                  <div className="ocr-simulator-presets" style={{ marginTop: "1.5rem", borderTop: "2px dashed #2d3748", paddingTop: "1rem" }}>
+                    <label style={{ fontFamily: "'Itim', cursive, sans-serif", fontWeight: 700, color: "#1e3a8a", textTransform: "uppercase", fontSize: "0.85rem", marginBottom: "0.5rem", display: "block" }}>Tài liệu mẫu học tập:</label>
+                    <div className="preset-buttons" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      <button className={`notebook-btn notebook-btn-secondary ${ocrPresetsSel === "chemistry-este" ? "active" : ""}`} onClick={() => { handlePresetSelect("chemistry-este"); setOcrInputType('file'); }} style={{ fontSize: "0.95rem", justifyContent: "flex-start", width: "100%" }}>
                         📝 Đề cương Este - Lipit (PDF)
                       </button>
-                      <button className={`btn btn-secondary btn-xs ${ocrPresetsSel === "physics-wave" ? "active" : ""}`} onClick={() => handlePresetSelect("physics-wave")}>
+                      <button className={`notebook-btn notebook-btn-secondary ${ocrPresetsSel === "physics-wave" ? "active" : ""}`} onClick={() => { handlePresetSelect("physics-wave"); setOcrInputType('file'); }} style={{ fontSize: "0.95rem", justifyContent: "flex-start", width: "100%" }}>
                         📝 Chuyên đề Sóng cơ học (DOCX)
                       </button>
                     </div>
                   </div>
                 </div>
 
-                <div className="ocr-results glass-panel">
-                  <div className="panel-header">
-                    <h3><i className="fa-solid fa-road text-cyan"></i> Bản đồ Lộ trình học tập Cá nhân hóa</h3>
-                    <span className={`badge ${ocrStatus === "done" ? "badge-green" : "badge-purple"}`}>
-                      {ocrStatus === "idle" ? "Đang chờ quét" : ocrStatus === "scanning" ? "Đang lập lộ trình..." : "Đã thiết lập"}
+                <div className="ocr-results notebook-paper" style={{ minHeight: "520px" }}>
+                  <div className="spiral-rings">
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                  </div>
+                  
+                  <div className="panel-header" style={{ borderBottom: "2px dashed #2d3748" }}>
+                    <h3 className="notebook-title" style={{ borderBottom: "none", margin: 0, padding: 0 }}><i className="fa-solid fa-road" style={{ color: "#1e3a8a" }}></i> Bản đồ Lộ trình học tập Cá nhân hóa</h3>
+                    <span className={`notebook-badge ${ocrStatus === "done" ? "notebook-badge-green" : "notebook-badge-blue"}`}>
+                      {ocrStatus === "idle" ? "Chờ phân tích" : ocrStatus === "scanning" ? "Đang tạo..." : "Hoàn thành"}
                     </span>
                   </div>
 
                   {ocrStatus === "idle" && (
-                    <div className="ocr-results-empty">
-                      <i className="fa-solid fa-route text-muted icon-large"></i>
-                      <h4>Kết quả phân tích lộ trình sẽ xuất hiện tại đây</h4>
-                      <p className="text-muted">Chọn tài liệu mẫu hoặc tải lên đề cương học tập cá nhân của bạn, AI sẽ bóc tách các khái niệm và xây dựng timeline học chặng thích ứng.</p>
+                    <div className="ocr-results-empty" style={{ color: "#2d3748", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                      <div>
+                        <i className="fa-solid fa-route icon-large" style={{ color: "rgba(45, 55, 72, 0.4)", fontSize: "3rem", marginBottom: "0.5rem" }}></i>
+                        <h4 style={{ fontSize: "1.2rem", fontWeight: "700" }}>Kết quả lộ trình học tập</h4>
+                        <p className="text-muted" style={{ color: "#4b5563", fontSize: "0.95rem" }}>Chọn tài liệu mẫu, dán văn bản bài học hoặc tải tệp tin ghi chú lên. AI sẽ xây dựng timeline học chặng thông minh cho bạn.</p>
+                      </div>
+
+                      {savedRoadmaps.length > 0 && (
+                        <div style={{ width: "100%", textAlign: "left", marginTop: "1rem", borderTop: "2px dashed #2d3748", paddingTop: "1rem" }}>
+                          <h4 style={{ fontSize: "1.05rem", fontWeight: "700", color: "#1e3a8a", marginBottom: "0.75rem", textTransform: "uppercase" }}>
+                            📚 Lộ trình học tập đã lưu ({savedRoadmaps.length}):
+                          </h4>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "250px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                            {savedRoadmaps.map((rm) => (
+                              <div 
+                                key={rm.id} 
+                                className="notebook-btn"
+                                onClick={() => {
+                                  setActiveRoadmap(rm);
+                                  if (rm.milestones.length > 0) {
+                                    setSelectedMilestoneId(rm.milestones[0].id);
+                                  }
+                                  setOcrStatus("done");
+                                }}
+                                style={{ 
+                                  display: "flex", 
+                                  justifyContent: "space-between", 
+                                  alignItems: "center", 
+                                  backgroundColor: "#fff", 
+                                  padding: "0.6rem 0.85rem",
+                                  fontSize: "0.95rem",
+                                  cursor: "pointer",
+                                  border: "2px solid #2d3748",
+                                  borderRadius: "10px",
+                                  boxShadow: "2px 2px 0px #2d3748",
+                                  width: "100%",
+                                  boxSizing: "border-box"
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                  <span>🗺️</span>
+                                  <span style={{ fontWeight: 700 }}>{rm.topicName}</span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                  <span className="notebook-badge" style={{ fontSize: "0.75rem", padding: "0.2rem 0.4rem" }}>
+                                    {rm.difficulty}
+                                  </span>
+                                  <button 
+                                    onClick={(e) => handleDeleteRoadmap(e, rm.id)}
+                                    style={{ 
+                                      background: "none", 
+                                      border: "none", 
+                                      color: "#ef4444", 
+                                      cursor: "pointer", 
+                                      padding: "0.2rem",
+                                      fontSize: "0.95rem"
+                                    }}
+                                    title="Xóa lộ trình"
+                                  >
+                                    <i className="fa-solid fa-trash-can"></i>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {ocrStatus === "scanning" && (
-                    <div className="ocr-loading-view">
-                      <div className="ai-processing-spinner"></div>
-                      <h4>AI đang lập sơ đồ chặng thích ứng...</h4>
-                      <div className="bloom-steps">
-                        <div className={`step-line ${ocrStep >= 1 ? (ocrStep > 1 ? "completed" : "active") : ""}`}>
-                          <i className={`fa-solid ${ocrStep > 1 ? "fa-check-circle text-green" : "fa-spinner fa-spin"}`}></i> 📂 Đọc tệp tin và trích xuất siêu dữ liệu...
+                    <div className="ocr-loading-view" style={{ color: "#2d3748" }}>
+                      <div className="ai-processing-spinner" style={{ borderTopColor: "#1e3a8a", borderLeftColor: "#1e3a8a" }}></div>
+                      <h4 style={{ fontWeight: 700 }}>AI đang thiết lập chặng lộ trình...</h4>
+                      <div className="bloom-steps" style={{ marginTop: "1rem", color: "#2d3748" }}>
+                        <div className={`step-line ${ocrStep >= 1 ? (ocrStep > 1 ? "completed" : "active") : ""}`} style={{ color: ocrStep > 1 ? "#10b981" : ocrStep === 1 ? "#3b82f6" : "#6b7280" }}>
+                          <i className={`fa-solid ${ocrStep > 1 ? "fa-check-circle" : "fa-spinner fa-spin"}`}></i> 📂 Trích xuất dữ liệu tài liệu...
                         </div>
-                        <div className={`step-line ${ocrStep >= 2 ? (ocrStep > 2 ? "completed" : "active") : ""}`}>
-                          <i className="fa-solid fa-spinner fa-spin"></i> 🗺️ Tạo chặng học tập & Thẻ truy hồi tương thích...
+                        <div className={`step-line ${ocrStep >= 2 ? (ocrStep > 2 ? "completed" : "active") : ""}`} style={{ color: ocrStep > 2 ? "#10b981" : ocrStep === 2 ? "#3b82f6" : "#6b7280" }}>
+                          <i className="fa-solid fa-spinner fa-spin"></i> 🗺️ Tạo chặng & Thẻ Leitner Bloom...
                         </div>
                       </div>
                     </div>
                   )}
 
                   {ocrStatus === "done" && activeRoadmap && (
-                    <div className="ocr-proposal-view active" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                      <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.75rem" }}>
-                        <span className="badge badge-purple" style={{ marginBottom: "0.5rem" }}>Chuyên đề: {activeRoadmap.topicName}</span>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                          <span>Độ khó lộ trình: <b>{activeRoadmap.difficulty}</b></span>
+                    <div className="ocr-proposal-view active" style={{ display: "flex", flexDirection: "column", gap: "1.25rem", color: "#2d3748" }}>
+                      <div style={{ borderBottom: "2px dashed #2d3748", paddingBottom: "0.75rem" }}>
+                        <span className="notebook-badge notebook-badge-blue" style={{ marginBottom: "0.5rem", display: "inline-block" }}>Chuyên đề: {activeRoadmap.topicName}</span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.95rem" }}>
+                          <span>Độ khó: <b>{activeRoadmap.difficulty}</b></span>
                           <span>Số chặng tích hợp: <b>{activeRoadmap.milestones.length} chặng</b></span>
                         </div>
                       </div>
 
                       {/* Interactive Visual Timeline Road */}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", padding: "1rem 0", margin: "0 1rem" }}>
-                        <div style={{ position: "absolute", left: 0, right: 0, height: "4px", backgroundColor: "rgba(255,255,255,0.06)", top: "50%", transform: "translateY(-50%)", zIndex: 1 }}></div>
+                        <div style={{ position: "absolute", left: 0, right: 0, height: "4px", backgroundColor: "#2d3748", top: "50%", transform: "translateY(-50%)", zIndex: 1 }}></div>
                         {activeRoadmap.milestones.map((m, mIdx) => {
                           const isSelected = selectedMilestoneId === m.id;
-                          let dotBg = "rgba(107, 114, 128, 0.4)";
-                          let borderCol = "var(--border-color)";
+                          let dotClass = "notebook-timeline-dot";
                           if (m.status === "completed") {
-                            dotBg = "var(--color-green)";
-                            borderCol = "var(--color-green)";
-                          } else if (m.status === "active") {
-                            dotBg = "var(--primary)";
-                            borderCol = "var(--primary)";
+                            dotClass += " completed";
+                          } else if (isSelected) {
+                            dotClass += " active";
                           }
 
                           return (
@@ -1842,27 +2185,14 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                                 alignItems: "center", 
                                 zIndex: 2, 
                                 cursor: "pointer", 
-                                transform: isSelected ? "scale(1.15)" : "scale(1)", 
-                                transition: "all 0.25s ease" 
+                                transform: isSelected ? "scale(1.1)" : "scale(1)", 
+                                transition: "all 0.2s ease" 
                               }}
                             >
-                              <div style={{ 
-                                width: "32px", 
-                                height: "32px", 
-                                borderRadius: "50%", 
-                                backgroundColor: isSelected ? "var(--bg-app)" : dotBg, 
-                                border: `2px solid ${isSelected ? "var(--primary)" : borderCol}`,
-                                color: isSelected ? "var(--primary)" : "#fff",
-                                display: "flex", 
-                                alignItems: "center", 
-                                justifyContent: "center", 
-                                fontWeight: "700", 
-                                fontSize: "0.85rem",
-                                boxShadow: isSelected ? "0 0 10px var(--primary-glow)" : "none"
-                              }}>
+                              <div className={dotClass}>
                                 {m.status === "completed" ? "✓" : mIdx + 1}
                               </div>
-                              <span style={{ fontSize: "0.7rem", marginTop: "0.35rem", fontWeight: isSelected ? "700" : "500", color: isSelected ? "var(--primary)" : "var(--text-secondary)" }}>
+                              <span style={{ fontSize: "0.85rem", marginTop: "0.35rem", fontWeight: isSelected ? "700" : "500", color: isSelected ? "#3b82f6" : "#2d3748" }}>
                                 Chặng {mIdx + 1}
                               </span>
                             </div>
@@ -1876,47 +2206,44 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                         if (!m) return null;
 
                         return (
-                          <div className="proposed-card-item" style={{ borderLeftColor: m.status === "completed" ? "var(--color-green)" : m.status === "active" ? "var(--primary)" : "var(--text-muted)", padding: "1.25rem", backgroundColor: "rgba(255,255,255,0.01)" }}>
+                          <div className="proposed-card-item notebook-preview-box" style={{ borderLeft: "4px solid #2d3748" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                              <h4 style={{ fontFamily: "var(--font-heading)", fontWeight: "700", fontSize: "1rem" }}>{m.title}</h4>
-                              <span className="badge" style={{
-                                backgroundColor: m.status === "completed" ? "rgba(16, 185, 129, 0.15)" : m.status === "active" ? "rgba(0, 242, 254, 0.15)" : "rgba(107, 114, 128, 0.15)",
-                                color: m.status === "completed" ? "var(--color-green)" : m.status === "active" ? "var(--primary)" : "var(--text-muted)"
-                              }}>
-                                {m.status === "completed" ? "Đã học" : m.status === "active" ? "Sẵn sàng học" : "🔒 Đang khóa"}
+                              <h4 style={{ fontWeight: "700", fontSize: "1.1rem", color: "#1e3a8a" }}>{m.title}</h4>
+                              <span className={`notebook-badge ${m.status === "completed" ? "notebook-badge-green" : m.status === "active" ? "notebook-badge-blue" : ""}`}>
+                                {m.status === "completed" ? "Đã học" : m.status === "active" ? "Sẵn sàng" : "🔒 Đang khóa"}
                               </span>
                             </div>
-                            <p className="text-muted text-xs mb-4" style={{ lineHeight: "1.4" }}>{m.description}</p>
+                            <p style={{ lineHeight: "1.4", fontSize: "0.95rem", marginBottom: "0.75rem" }}>{m.description}</p>
                             
-                            <div style={{ display: "flex", gap: "1rem", fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
+                            <div style={{ display: "flex", gap: "1rem", fontSize: "0.85rem", color: "#4b5563", marginBottom: "1rem" }}>
                               <span><i className="fa-regular fa-clock"></i> Thời gian: <b>{m.timeEstimate}</b></span>
                               <span><i className="fa-solid fa-clone"></i> Thẻ liên kết: <b>{m.cards.length} thẻ</b></span>
                             </div>
 
                             {/* Card Previews */}
-                            <div style={{ backgroundColor: "rgba(0,0,0,0.2)", borderRadius: "var(--radius-sm)", padding: "0.75rem", border: "1px solid var(--border-color)" }}>
-                              <span className="badge badge-green" style={{ fontSize: "0.65rem", padding: "2px 6px" }}>
+                            <div style={{ backgroundColor: "rgba(0,0,0,0.02)", border: "2px dashed #2d3748", borderRadius: "10px", padding: "0.75rem" }}>
+                              <span className={`notebook-badge ${m.cards[0]?.type === "green" ? "notebook-badge-green" : m.cards[0]?.type === "yellow" ? "" : "notebook-badge-red"}`} style={{ fontSize: "0.75rem", padding: "2px 6px" }}>
                                 {m.cards[0]?.type === "green" ? "Recall" : m.cards[0]?.type === "yellow" ? "Apply" : "Synthesize"}
                               </span>
-                              <p className="text-sm font-semibold" style={{ margin: "0.5rem 0", color: "#fff", lineHeight: "1.4" }}>{m.cards[0]?.question}</p>
-                              <p className="text-xs text-muted" style={{ fontStyle: "italic" }}>Nguồn: {m.cards[0]?.reference}</p>
+                              <p style={{ margin: "0.5rem 0", fontWeight: 700, lineHeight: "1.4", fontSize: "1rem" }}>{m.cards[0]?.question}</p>
+                              <p style={{ fontSize: "0.85rem", fontStyle: "italic", color: "#4b5563" }}>Nguồn: {m.cards[0]?.reference}</p>
                             </div>
 
-                            <div style={{ marginTop: "1.25rem", display: "flex", gap: "0.75rem" }}>
+                            <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem" }}>
                               {m.status === "locked" ? (
-                                <button className="btn btn-secondary btn-full btn-sm" disabled style={{ opacity: 0.5 }}>
+                                <button className="notebook-btn" disabled style={{ width: "100%" }}>
                                   <i className="fa-solid fa-lock"></i> Hoàn thành chặng trước để mở khóa
                                 </button>
                               ) : m.status === "active" ? (
-                                <button className="btn btn-primary btn-full btn-sm" onClick={() => handleApproveMilestone(m.id)}>
+                                <button className="notebook-btn" onClick={() => handleApproveMilestone(m.id)} style={{ width: "100%" }}>
                                   <i className="fa-solid fa-bolt"></i> Kích hoạt chặng này (+30 XP)
                                 </button>
                               ) : (
-                                <button className="btn btn-secondary btn-full btn-sm" onClick={() => {
+                                <button className="notebook-btn notebook-btn-secondary" onClick={() => {
                                   setActiveTab("retrieval");
                                   setFilterChapter(m.cards[0]?.chapterId || "all");
                                   setForcePracticeAll(true);
-                                }}>
+                                }} style={{ width: "100%" }}>
                                   <i className="fa-solid fa-play"></i> Bắt đầu ôn tập trong Leitner
                                 </button>
                               )}
@@ -1925,9 +2252,14 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                         );
                       })()}
 
-                      <button className="btn btn-primary btn-full" onClick={handleApproveOCR} style={{ marginTop: "1rem" }}>
-                        <i className="fa-solid fa-circle-check"></i> Kích hoạt toàn bộ lộ trình (+100 XP)
-                      </button>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
+                        <button className="notebook-btn" onClick={() => setIsVerificationModalOpen(true)} style={{ width: "100%", backgroundColor: "#fbbf24", color: "#2d3748" }}>
+                          <i className="fa-solid fa-check-double"></i> 🔍 Duyệt & Xác nhận Thẻ (Verification Layer)
+                        </button>
+                        <button className="notebook-btn notebook-btn-success" onClick={handleApproveOCR} style={{ width: "100%" }}>
+                          <i className="fa-solid fa-circle-check"></i> Kích hoạt toàn bộ lộ trình (+100 XP)
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1938,163 +2270,289 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
           {/* TAB: KNOWLEDGE MAP */}
           {activeTab === "knowledge-map" && (
             <section className="tab-content active">
-              <div className="knowledge-map-layout glass-panel">
-                <div className="panel-header">
-                  <h3><i className="fa-solid fa-network-wired text-primary"></i> Bản đồ liên kết tri thức (Knowledge Map)</h3>
-                  <div className="map-legend">
-                    <span className="legend-item"><span className="legend-dot bg-gray"></span> Chưa mở</span>
-                    <span className="legend-item"><span className="legend-dot bg-orange"></span> Đang học</span>
-                    <span className="legend-item"><span className="legend-dot bg-green"></span> Đã vững</span>
-                    <span className="legend-item"><span className="legend-dot bg-red-glow"></span> Thẻ Đỏ sẵn sàng</span>
+              {savedRoadmaps.length === 0 ? (
+                <div className="glass-panel notebook-paper" style={{ padding: "2.5rem 2rem 2.5rem 3.5rem", position: "relative", minHeight: "450px" }}>
+                  <div className="spiral-rings">
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                    <div className="spiral-ring"></div>
+                  </div>
+                  <h2 style={{ fontSize: "2rem", color: "#1e3a8a", marginBottom: "1rem", fontWeight: 800 }}>
+                    🗺️ Bản đồ tri thức chưa khai phá!
+                  </h2>
+                  <div style={{ fontSize: "1.15rem", lineHeight: "1.7", display: "flex", flexDirection: "column", gap: "1.2rem", color: "#2d3748" }}>
+                    <p>Hiện tại, bạn chưa tạo bất kỳ lộ trình học tập cá nhân hóa nào bằng AI OCR, nên Bản đồ liên kết tri thức đang tạm thời ẩn giấu.</p>
+                    <p>Hãy dán tài liệu học hoặc chép văn bản vào tab <b>Số hóa & AI OCR</b> để AI thiết lập các chặng lộ trình. Sơ đồ tư duy liên kết chặng học của riêng bạn sẽ được vẽ tự động tại đây!</p>
+                    <div style={{ marginTop: "1rem" }}>
+                      <button className="btn btn-primary" onClick={() => { setActiveTab("ocr"); setOcrInputType("text"); }} style={{ padding: "0.85rem 2.2rem", fontSize: "1.1rem" }}>
+                        Khởi tạo Lộ trình học tập AI 🚀
+                      </button>
+                    </div>
                   </div>
                 </div>
+              ) : (() => {
+                const activeMap = savedRoadmaps.find(r => r.id === activeMapId) || savedRoadmaps[0];
+                if (!activeMap) return null;
 
-                <div className="map-container">
-                  <svg id="knowledge-map-svg" width="100%" height="450">
-                    {/* Draw Links */}
-                    {INITIAL_SUBJECTS[activeSubject]?.chapters.map((ch) => {
-                      return ch.prerequisites.map(preId => {
-                        const fromCoord = coords.find(c => c.id === preId);
-                        const toCoord = coords.find(c => c.id === ch.id);
-                        if (!fromCoord || !toCoord) return null;
+                const getRoadmapProgress = (rm: LearningRoadmap) => {
+                  let masteredCount = 0;
+                  rm.milestones.forEach(m => {
+                    const cardInDeck = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+                    if (cardInDeck && cardInDeck.box === 3) {
+                      masteredCount++;
+                    }
+                  });
+                  return Math.round((masteredCount / 3) * 100);
+                };
 
-                        const preState = getNodeState(preId, []);
-                        const chState = getNodeState(ch.id, ch.prerequisites);
-                        const activePath = preState === "mastered" && chState !== "locked";
+                const getCustomMapNodesCoords = () => {
+                  return [
+                    { id: "ms1", x: 120, y: 290 },
+                    { id: "ms2", x: 380, y: 180 },
+                    { id: "ms3", x: 640, y: 390 }
+                  ];
+                };
 
-                        return (
-                          <line 
-                            key={`${preId}-${ch.id}`}
-                            x1={fromCoord.x} 
-                            y1={fromCoord.y} 
-                            x2={toCoord.x} 
-                            y2={toCoord.y} 
-                            className={`map-link ${activePath ? "active-path" : ""}`}
-                          />
-                        );
-                      });
-                    })}
-
-                    {/* Draw Nodes */}
-                    {INITIAL_SUBJECTS[activeSubject]?.chapters.map((ch, idx) => {
-                      const pos = coords.find(c => c.id === ch.id);
-                      if (!pos) return null;
-
-                      const state = getNodeState(ch.id, ch.prerequisites);
-                      const isSelected = selectedMapNodeId === ch.id;
-
-                      let nodeClass = "map-node";
-                      if (state === "locked") nodeClass += " node-locked";
-                      else if (state === "active") nodeClass += " node-active";
-                      else if (state === "mastered") nodeClass += " node-mastered";
-                      else if (state === "red-ready") nodeClass += " node-red-ready";
-
-                      const romanNumerals = ["I", "II", "III", "IV"];
-
-                      return (
-                        <g 
-                          key={ch.id} 
-                          className={nodeClass} 
-                          style={{ transformOrigin: `${pos.x}px ${pos.y}px` }}
-                          onClick={() => handleMapNodeClick(ch.id)}
-                        >
-                          <circle cx={pos.x} cy={pos.y} r={isSelected ? 48 : 40} className="node-circle" />
-                          <text x={pos.x} y={pos.y + 6} className="node-text">
-                            {state === "locked" ? "🔒" : romanNumerals[idx]}
-                          </text>
-                          <text 
-                            x={pos.x} 
-                            y={pos.y + 60} 
-                            fill={isSelected ? "var(--primary)" : "var(--text-primary)"}
-                            fontFamily="var(--font-heading)"
-                            fontWeight={isSelected ? "700" : "600"}
-                            fontSize="12px"
-                            textAnchor="middle"
-                          >
-                            {ch.name.split(":")[1] || ch.name}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-
-                  {/* Node detail panel */}
-                  {selectedMapNodeId && (() => {
-                    const ch = INITIAL_SUBJECTS[activeSubject]?.chapters.find(c => c.id === selectedMapNodeId);
-                    if (!ch) return null;
-
-                    const chapterCards = cards.filter(c => c.subjectId === activeSubject && c.chapterId === selectedMapNodeId);
-                    const green = chapterCards.filter(c => c.type === "green");
-                    const yellow = chapterCards.filter(c => c.type === "yellow");
-                    const red = chapterCards.filter(c => c.type === "red");
-
-                    const greenB3 = green.filter(c => c.box === 3).length;
-                    const yellowB3 = yellow.filter(c => c.box === 3).length;
-                    const redB3 = red.filter(c => c.box === 3).length;
-
-                    // lock check alert
-                    const greenYellowB3Count = chapterCards.filter(c => c.box === 3 && (c.type === "green" || c.type === "yellow")).length;
-                    const greenYellowTotal = chapterCards.filter(c => c.type === "green" || c.type === "yellow").length;
-                    const showRedLockAlert = greenYellowTotal > 0 && greenYellowB3Count < greenYellowTotal && red.length > 0;
-
-                    return (
-                      <div className="node-detail-sidebar">
-                        <button className="close-sidebar-btn" onClick={() => setSelectedMapNodeId(null)}>
-                          <i className="fa-solid fa-xmark"></i>
-                        </button>
-                        <div className="node-title-header">
-                          <span className="subject-tag">{activeSubject === "chemistry" ? "Hóa học 12" : "Vật lý 12"}</span>
-                          <h3>{ch.name}</h3>
-                        </div>
-                        <p id="map-node-desc" className="text-muted">{ch.description}</p>
-                        
-                        <div className="node-prereq-list">
-                          <strong>Điều kiện tiên quyết:</strong>{" "}
-                          <span>
-                            {ch.prerequisites.map(preId => {
-                              const pre = INITIAL_SUBJECTS[activeSubject]?.chapters.find(c => c.id === preId);
-                              return pre ? pre.name.split(":")[0] : preId;
-                            }).join(", ") || "Không có"}
-                          </span>
-                        </div>
-
-                        <div className="chapter-card-stats">
-                          <div className="c-stat-box">
-                            <span className="c-stat-lbl">Thẻ Xanh</span>
-                            <span className="c-stat-val text-green">{greenB3}/{green.length}</span>
-                          </div>
-                          <div className="c-stat-box">
-                            <span className="c-stat-lbl">Thẻ Vàng</span>
-                            <span className="c-stat-val text-yellow">{yellowB3}/{yellow.length}</span>
-                          </div>
-                          <div className="c-stat-box">
-                            <span className="c-stat-lbl">Thẻ Đỏ</span>
-                            <span className="c-stat-val text-red">{redB3}/{red.length}</span>
-                          </div>
-                        </div>
-
-                        {showRedLockAlert && (
-                          <div className="chapter-lock-indicator alert-box">
-                            <i className="fa-solid fa-lock text-orange"></i>
-                            <span>Bạn chưa hoàn thành các thẻ Xanh/Vàng của chương tiên quyết để mở khóa Thẻ Đỏ chương này.</span>
-                          </div>
-                        )}
-
-                        <button className="btn btn-primary btn-full" onClick={() => {
-                          setActiveTab("retrieval");
-                          setFilterChapter(selectedMapNodeId);
-                          setFilterBloom({ green: true, yellow: true, red: true });
-                          setFilterBox({ box1: true, box2: true, box3: true });
-                          setForcePracticeAll(true);
-                          setSelectedMapNodeId(null);
-                        }}>
-                          <i className="fa-solid fa-play"></i> Ôn tập riêng chương này
-                        </button>
+                return (
+                  <div className="knowledge-map-layout">
+                    {/* Left Sidebar Menu */}
+                    <div className="map-sidebar-pane">
+                      <h3 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#1e3a8a", borderBottom: "2px dashed #2d3748", paddingBottom: "0.5rem", marginBottom: "1rem" }}>
+                        📋 Danh sách lộ trình
+                      </h3>
+                      <div className="saved-roadmaps-list-scroll" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", maxHeight: "500px" }}>
+                        {savedRoadmaps.map((rm) => {
+                          const isSelected = activeMap.id === rm.id;
+                          const progress = getRoadmapProgress(rm);
+                          return (
+                            <div 
+                              key={rm.id} 
+                              onClick={() => {
+                                setActiveMapId(rm.id);
+                                setSelectedMapNodeId(null);
+                              }}
+                              className={`notebook-preview-box ${isSelected ? "active" : ""}`}
+                              style={{ 
+                                cursor: "pointer", 
+                                border: "2px solid #2d3748",
+                                borderColor: isSelected ? "#3b82f6" : "#2d3748",
+                                transform: isSelected ? "scale(1.02)" : "scale(1)",
+                                transition: "all 0.15s ease",
+                                backgroundColor: isSelected ? "#eff6ff" : "#fff",
+                                position: "relative"
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.35rem" }}>
+                                <h4 style={{ fontSize: "0.95rem", fontWeight: "700", margin: 0, color: isSelected ? "#1e3a8a" : "#2d3748" }}>{rm.topicName}</h4>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRoadmap(e, rm.id);
+                                    if (activeMapId === rm.id) {
+                                      setActiveMapId("");
+                                    }
+                                  }}
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: "0.95rem", padding: "2px" }}
+                                  title="Xóa lộ trình"
+                                >
+                                  <i className="fa-solid fa-trash-can"></i>
+                                </button>
+                              </div>
+                              <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+                                Độ khó: <b>{rm.difficulty}</b>
+                              </div>
+                              {/* Progress bar */}
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <div style={{ flex: 1, height: "8px", backgroundColor: "#e2e8f0", borderRadius: "4px", overflow: "hidden", border: "1px solid #2d3748" }}>
+                                  <div style={{ height: "100%", width: `${progress}%`, backgroundColor: progress === 100 ? "#10b981" : "#f59e0b" }}></div>
+                                </div>
+                                <span style={{ fontSize: "0.8rem", fontWeight: "700" }}>{progress}%</span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })()}
-                </div>
-              </div>
+                    </div>
+
+                    {/* Right Main Pane */}
+                    <div className="map-main-pane">
+                      <div className="panel-header" style={{ padding: "0.5rem 1rem", border: "2px solid #2d3748", borderRadius: "12px", backgroundColor: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <h4 style={{ fontWeight: 800, color: "#1e3a8a", margin: 0 }}>Sơ đồ liên kết: {activeMap.topicName}</h4>
+                        <div className="map-legend" style={{ display: "flex", gap: "1rem", fontSize: "0.85rem" }}>
+                          <span className="legend-item"><span className="legend-dot bg-gray"></span> Chưa mở</span>
+                          <span className="legend-item"><span className="legend-dot bg-orange"></span> Đang học</span>
+                          <span className="legend-item"><span className="legend-dot bg-green"></span> Đã vững</span>
+                        </div>
+                      </div>
+
+                      <div className="map-container" style={{ position: "relative", overflow: "visible" }}>
+                        <svg id="knowledge-map-svg" width="100%" height="580" style={{ overflow: "visible" }}>
+                          <defs>
+                            <filter id="crayon-sketch" x="-10%" y="-10%" width="120%" height="120%">
+                              <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise" />
+                              <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G" />
+                            </filter>
+                          </defs>
+
+                          {/* Draw Links between ms1 -> ms2 and ms2 -> ms3 */}
+                          {(() => {
+                            const linkCoords = [
+                              { from: "ms1", to: "ms2" },
+                              { from: "ms2", to: "ms3" }
+                            ];
+                            return linkCoords.map(link => {
+                              const fromCoord = getCustomMapNodesCoords().find(c => c.id === link.from);
+                              const toCoord = getCustomMapNodesCoords().find(c => c.id === link.to);
+                              if (!fromCoord || !toCoord) return null;
+
+                              // Check states to see if path is active
+                              const fromMilestone = activeMap.milestones[0]; // ms1
+                              const toMilestone = activeMap.milestones[1]; // ms2
+                              const currentLinkFrom = link.from === "ms1" ? fromMilestone : toMilestone;
+                              
+                              const fromCard = cards.find(c => currentLinkFrom?.cards.some(mc => mc.question.trim() === c.question.trim()));
+                              const activePath = fromCard && fromCard.box === 3;
+
+                              return (
+                                <line 
+                                  key={`${link.from}-${link.to}`}
+                                  x1={fromCoord.x} 
+                                  y1={fromCoord.y} 
+                                  x2={toCoord.x} 
+                                  y2={toCoord.y} 
+                                  className={`map-link ${activePath ? "active-path" : ""}`}
+                                  filter="url(#crayon-sketch)"
+                                />
+                              );
+                            });
+                          })()}
+
+                          {/* Draw Nodes */}
+                          {activeMap.milestones.map((m, idx) => {
+                            const pos = getCustomMapNodesCoords()[idx];
+                            if (!pos) return null;
+
+                            const currentCard = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+                            
+                            let state: "locked" | "active" | "mastered" | "red-ready" = "locked";
+                            
+                            let prereqMastered = true;
+                            if (idx > 0) {
+                              const prevMilestone = activeMap.milestones[idx - 1];
+                              const prevCard = cards.find(c => prevMilestone?.cards.some(mc => mc.question.trim() === c.question.trim()));
+                              prereqMastered = prevCard !== undefined && prevCard.box === 3;
+                            }
+
+                            if (!prereqMastered) {
+                              state = "locked";
+                            } else if (!currentCard) {
+                              state = "active";
+                            } else if (currentCard.box === 3) {
+                              state = "mastered";
+                            } else {
+                              state = "active";
+                            }
+
+                            const isSelected = selectedMapNodeId === m.id;
+                            let nodeClass = "map-node";
+                            if (state === "locked") nodeClass += " node-locked";
+                            else if (state === "active") nodeClass += " node-active";
+                            else if (state === "mastered") nodeClass += " node-mastered";
+
+                            const romanNumerals = ["I", "II", "III", "IV"];
+
+                            return (
+                              <g 
+                                key={m.id} 
+                                className={nodeClass} 
+                                style={{ transformOrigin: `${pos.x}px ${pos.y}px` }}
+                                onClick={() => setSelectedMapNodeId(m.id)}
+                              >
+                                <circle cx={pos.x} cy={pos.y} r={isSelected ? 48 : 40} className="node-circle" filter="url(#crayon-sketch)" />
+                                <text x={pos.x} y={pos.y} className="node-text">
+                                  {romanNumerals[idx]}
+                                </text>
+                                <text 
+                                  x={pos.x} 
+                                  y={pos.y + 60} 
+                                  fill={isSelected ? "var(--primary)" : "var(--text-primary)"}
+                                  fontFamily="var(--font-heading)"
+                                  fontWeight={isSelected ? "700" : "600"}
+                                  fontSize="12px"
+                                  textAnchor="middle"
+                                >
+                                  {m.title}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+
+                        {/* Node detail panel */}
+                        {selectedMapNodeId && (() => {
+                          const m = activeMap.milestones.find(x => x.id === selectedMapNodeId);
+                          if (!m) return null;
+
+                          const currentCard = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+
+                          return (
+                            <div className="node-detail-sidebar" style={{ top: "10px", right: "10px", height: "calc(100% - 20px)" }}>
+                              <button className="close-sidebar-btn" onClick={() => setSelectedMapNodeId(null)}>
+                                <i className="fa-solid fa-xmark"></i>
+                              </button>
+                              <div className="node-title-header">
+                                <span className="subject-tag" style={{ backgroundColor: "#ffd1d7", color: "#2d3748" }}>{activeMap.topicName}</span>
+                                <h3>{m.title}</h3>
+                              </div>
+                              <p id="map-node-desc" className="text-muted" style={{ fontSize: "0.9rem", lineHeight: "1.4" }}>{m.description}</p>
+                              
+                              <div className="node-prereq-list" style={{ fontSize: "0.9rem" }}>
+                                <strong>Thời gian ước tính:</strong>{" "}
+                                <span>{m.timeEstimate || "15 phút"}</span>
+                              </div>
+
+                              <div className="chapter-card-stats" style={{ display: "block", marginTop: "1rem" }}>
+                                <h4 style={{ fontSize: "0.95rem", fontWeight: "700", marginBottom: "0.5rem", color: "#1e3a8a" }}>
+                                  Thẻ Leitner liên kết:
+                                </h4>
+                                {currentCard ? (
+                                  <div className="notebook-preview-box" style={{ padding: "0.75rem", borderLeft: "4px solid #10b981", backgroundColor: "#f0fdf4" }}>
+                                    <p style={{ fontWeight: 700, fontSize: "0.9rem", margin: 0, color: "#1e3a8a" }}>Ngăn tủ: Ngăn {currentCard.box}</p>
+                                    <p style={{ fontSize: "0.85rem", color: "#4b5563", marginTop: "0.25rem", whiteSpace: "normal" }}>
+                                      <b>Câu hỏi:</b> {currentCard.question}
+                                    </p>
+                                    <span className="notebook-badge notebook-badge-green" style={{ marginTop: "0.5rem", display: "inline-block" }}>
+                                      {currentCard.type.toUpperCase()}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="notebook-preview-box" style={{ padding: "0.75rem", borderLeft: "4px solid #f59e0b", backgroundColor: "#fffbeb" }}>
+                                    <p style={{ fontSize: "0.85rem", color: "#b45309", margin: 0, lineHeight: 1.4 }}>
+                                      ⚠️ Thẻ này chưa kích hoạt. Vui lòng kích hoạt lộ trình này từ kết quả AI OCR.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {currentCard && (
+                                <button className="btn btn-primary btn-full" style={{ marginTop: "1.25rem" }} onClick={() => {
+                                  handleStartCardPractice(currentCard);
+                                  setSelectedMapNodeId(null);
+                                }}>
+                                  <i className="fa-solid fa-play"></i> Bắt đầu ôn tập Thẻ này
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </section>
           )}
 
@@ -2397,6 +2855,174 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
             <div className="modal-footer">
               <span className="text-xs text-muted">Trả lời sai sẽ đưa toàn bộ thẻ dễ vừa ôn về Ngăn 1 để chống rỗng kiến thức.</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Verification Layer (Retagging & Edit Popup) */}
+      {isVerificationModalOpen && verificationCards.length > 0 && (
+        <div className="verification-modal-overlay">
+          <div className="verification-modal-content">
+            <div className="verification-header">
+              <h2>✍️ Kiểm duyệt & Phân loại Kiến thức (Verification Layer)</h2>
+              <button className="notebook-btn notebook-btn-secondary" onClick={() => setIsVerificationModalOpen(false)} style={{ padding: "0.4rem 0.8rem", fontSize: "0.95rem" }}>
+                Đóng
+              </button>
+            </div>
+            <div className="verification-body">
+              <p style={{ margin: 0, fontSize: "1.05rem", lineHeight: "1.5" }}>
+                AI đã trích xuất <b>{verificationCards.length} thẻ lý thuyết/bài tập</b>. Bạn hãy kiểm tra lại nội dung, phân loại môn học, chương mục (retagging) trước khi lưu trữ chính thức vào hệ thống Leitner.
+              </p>
+              
+              {verificationCards.map((card, cIdx) => {
+                const currentSubject = card.subjectId;
+                const subjectChapters = INITIAL_SUBJECTS[currentSubject]?.chapters || [];
+
+                return (
+                  <div key={cIdx} className="verification-card-edit">
+                    <div className="verification-card-edit-content">
+                      <div className="verification-card-header">
+                        <h3>
+                          <span className={`notebook-badge ${card.type === 'green' ? 'notebook-badge-green' : card.type === 'yellow' ? '' : 'notebook-badge-red'}`}>
+                            Thẻ {cIdx + 1}: {card.type === 'green' ? 'Trắc nghiệm (Recall)' : card.type === 'yellow' ? 'Tự luận ngắn (Apply)' : 'Tự luận sâu (Synthesize)'}
+                          </span>
+                        </h3>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <span className="notebook-badge" style={{ backgroundColor: "#e0f2fe", color: "#0369a1" }}>Ngăn Leitner: 1</span>
+                        </div>
+                      </div>
+
+                      <div className="verification-grid-2">
+                        {/* Tagging: Subject Selector */}
+                        <div className="verification-field-group">
+                          <label>Môn học (Tag Subject):</label>
+                          <select 
+                            className="verification-input"
+                            value={card.subjectId}
+                            onChange={(e) => {
+                              const newSub = e.target.value;
+                              const defaultCh = newSub === 'chemistry' ? 'c1' : 'p1';
+                              handleUpdateVerificationCard(cIdx, { subjectId: newSub, chapterId: defaultCh });
+                            }}
+                          >
+                            <option value="chemistry">🧪 Hóa học 12</option>
+                            <option value="physics">⚡ Vật lý 12</option>
+                          </select>
+                        </div>
+
+                        {/* Tagging: Chapter Selector */}
+                        <div className="verification-field-group">
+                          <label>Chương mục (Tag Chapter):</label>
+                          <select 
+                            className="verification-input"
+                            value={card.chapterId}
+                            onChange={(e) => handleUpdateVerificationCard(cIdx, { chapterId: e.target.value })}
+                          >
+                            {subjectChapters.map(ch => (
+                              <option key={ch.id} value={ch.id}>{ch.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Content: Question */}
+                      <div className="verification-field-group">
+                        <label>Câu hỏi:</label>
+                        <textarea 
+                          className="verification-input" 
+                          style={{ minHeight: "60px", resize: "vertical" }}
+                          value={card.question}
+                          onChange={(e) => handleUpdateVerificationCard(cIdx, { question: e.target.value })}
+                        />
+                      </div>
+
+                      {/* Options (Green card only) */}
+                      {card.type === 'green' && (
+                        <div className="verification-field-group">
+                          <label>Các phương án lựa chọn (Chọn nút tròn để chỉ định đáp án đúng):</label>
+                          <div className="verification-options-inputs">
+                            {(card.options || ["", "", "", ""]).map((opt, oIdx) => (
+                              <div key={oIdx} className="verification-option-row">
+                                <input 
+                                  type="radio" 
+                                  name={`correct-opt-${cIdx}`}
+                                  className="verification-radio"
+                                  checked={card.correctOption === oIdx}
+                                  onChange={() => handleUpdateVerificationCard(cIdx, { correctOption: oIdx })}
+                                />
+                                <span style={{ fontWeight: "700", width: "20px" }}>{String.fromCharCode(65 + oIdx)}.</span>
+                                <input 
+                                  type="text" 
+                                  className="verification-input"
+                                  value={opt}
+                                  onChange={(e) => handleUpdateVerificationCardOption(cIdx, oIdx, e.target.value)}
+                                  placeholder={`Phương án ${String.fromCharCode(65 + oIdx)}`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Content: Model Answer */}
+                      <div className="verification-field-group">
+                        <label>{card.type === 'green' ? 'Lời giải chi tiết:' : 'Đáp án chuẩn / Hướng dẫn giải:'}</label>
+                        <textarea 
+                          className="verification-input" 
+                          style={{ minHeight: "80px", resize: "vertical" }}
+                          value={card.modelAnswer}
+                          onChange={(e) => handleUpdateVerificationCard(cIdx, { modelAnswer: e.target.value })}
+                        />
+                      </div>
+
+                      {/* Content: Reference */}
+                      <div className="verification-field-group" style={{ marginBottom: 0 }}>
+                        <label>Nguồn tham khảo / Tài liệu trích dẫn:</label>
+                        <input 
+                          type="text" 
+                          className="verification-input"
+                          value={card.reference}
+                          onChange={(e) => handleUpdateVerificationCard(cIdx, { reference: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="verification-footer">
+              <button className="notebook-btn notebook-btn-secondary" onClick={() => setIsVerificationModalOpen(false)}>
+                Hủy bỏ
+              </button>
+              <button 
+                className="notebook-btn notebook-btn-success" 
+                onClick={() => handleConfirmVerification(verificationCards)}
+                style={{ padding: "0.6rem 1.8rem" }}
+              >
+                <i className="fa-solid fa-cloud-arrow-up"></i> Xác nhận & Lưu trữ Leitner (+100 XP)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Praise Modal (Speedy Response) */}
+      {showPraiseModal && (
+        <div className="praise-modal-overlay">
+          <div className="praise-modal-content">
+            <div className="praise-stars">
+              <span>⭐</span><span>⭐</span><span>⭐</span><span>⭐</span><span>⭐</span>
+            </div>
+            <span className="praise-character">⚡</span>
+            <h2 className="praise-title">PHẢN XẠ THẦN TỐC!</h2>
+            <div className="praise-description">
+              <p>Bạn đã hoàn thành việc ôn tập thẻ này cực nhanh trong vòng <b>{praiseTimeSpent} giây</b>!</p>
+              <p style={{ marginTop: "0.5rem", color: "#10b981", fontWeight: "700" }}>Thưởng nóng phản xạ: <b>+10 XP Bonus</b>! 🏆</p>
+            </div>
+            <button className="notebook-btn" onClick={() => setShowPraiseModal(false)} style={{ width: "100%" }}>
+              Tiếp tục học tập 🚀
+            </button>
           </div>
         </div>
       )}

@@ -1,40 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Itim&family=Pangolin&display=swap');
+
 /* AI Retrieval Box Design System & Styling */
 
 :root {
   /* Colors */
-  --bg-app: #080b11;
-  --bg-sidebar: #0f131a;
-  --bg-panel: rgba(17, 22, 32, 0.75);
-  --bg-panel-solid: #111620;
-  --border-color: rgba(255, 255, 255, 0.08);
+  --bg-app: #f4f1ea;              /* Warm desk background */
+  --bg-sidebar: #fffef9;          /* Creamy notebook cover/tab area */
+  --bg-panel: #fffefb;            /* Lined paper pages */
+  --bg-panel-solid: #fffdf5;
+  --border-color: #2d3748;        /* Bold, sketch-like slate ink border */
   
-  --text-primary: #f3f4f6;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  --text-primary: #2d3748;        /* Slate ink */
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;          /* graphite pencil look */
   
-  --primary: #00f2fe;
-  --primary-glow: rgba(0, 242, 254, 0.3);
-  --secondary: #7f00ff;
+  --primary: #2563eb;             /* Bright ink blue */
+  --primary-glow: rgba(37, 99, 235, 0.15);
+  --secondary: #d946ef;           /* Pink highlighter */
   
   /* Color-coded Retrieval Levels (Bloom's Taxonomy) */
-  --color-green: #10b981;
-  --color-green-glow: rgba(16, 185, 129, 0.25);
-  --color-yellow: #f59e0b;
-  --color-yellow-glow: rgba(245, 158, 11, 0.25);
-  --color-red: #ef4444;
-  --color-red-glow: rgba(239, 68, 68, 0.25);
+  --color-green: #059669;         /* Green highlighter */
+  --color-green-glow: rgba(5, 150, 105, 0.15);
+  --color-yellow: #d97706;        /* Orange/Yellow highlighter */
+  --color-yellow-glow: rgba(217, 119, 6, 0.15);
+  --color-red: #dc2626;           /* Red ink/highlighter */
+  --color-red-glow: rgba(220, 38, 38, 0.15);
   
   /* Alert / Special colors */
-  --orange: #f97316;
-  --cyan: #06b6d4;
-  --purple: #a855f7;
+  --orange: #ea580c;
+  --cyan: #0284c7;
+  --purple: #9333ea;
   
   /* Typography */
-  --font-heading: 'Outfit', sans-serif;
-  --font-body: 'Inter', sans-serif;
+  --font-heading: 'Pangolin', 'Itim', cursive, sans-serif;
+  --font-body: 'Pangolin', 'Itim', cursive, sans-serif; /* Everything in handwriting! */
   
   /* Shadows & Radius */
-  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 5px 5px 0px #2d3748; /* solid cartoonish shadow offset! */
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 8px;
@@ -1677,7 +1679,7 @@ body {
 .map-container {
   position: relative;
   width: 100%;
-  height: 450px;
+  height: 580px;
   background-color: rgba(0, 0, 0, 0.2);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -2407,3 +2409,1295 @@ input:checked + .slider:before {
     display: none;
   }
 }
+
+/* --- ANIME NOTEBOOK THEME --- */
+.notebook-paper {
+  background-color: #fffef5 !important;
+  background-image: linear-gradient(rgba(147, 197, 253, 0.25) 1px, transparent 1px) !important;
+  background-size: 100% 28px !important;
+  border: 3px solid #2d3748 !important;
+  border-radius: 16px !important;
+  box-shadow: 8px 8px 0px #2d3748 !important;
+  color: #2d3748 !important;
+  padding: 2.5rem 2rem 2rem 3.5rem !important; /* Left padding creates space for spiral / margin line */
+  position: relative !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+  transition: all 0.3s ease;
+}
+
+/* Notebook margin line */
+.notebook-paper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 45px;
+  width: 2px;
+  background-color: rgba(239, 68, 68, 0.5) !important; /* soft red line */
+  pointer-events: none;
+}
+
+/* Spiral rings */
+.spiral-rings {
+  position: absolute;
+  left: 8px;
+  top: 30px;
+  bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.spiral-ring {
+  width: 24px;
+  height: 12px;
+  background: linear-gradient(90deg, #9ca3af, #f3f4f6, #4b5563);
+  border-radius: 6px;
+  border: 2px solid #2d3748;
+  margin-bottom: 25px;
+  box-shadow: 1px 2px 2px rgba(0,0,0,0.15);
+}
+
+.notebook-title {
+  font-family: 'Itim', cursive, sans-serif !important;
+  font-weight: 700 !important;
+  color: #1e3a8a !important; /* Dark blue ink style */
+  font-size: 1.5rem !important;
+  border-bottom: 2px dashed rgba(30, 58, 138, 0.2);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.notebook-text {
+  font-family: 'Itim', cursive, sans-serif !important;
+  line-height: 28px !important;
+  font-size: 1.05rem !important;
+  color: #2d3748 !important;
+}
+
+.notebook-textarea {
+  width: 100%;
+  min-height: 140px;
+  background: transparent !important;
+  border: 2px solid #2d3748 !important;
+  border-radius: 10px !important;
+  padding: 0.75rem !important;
+  color: #2d3748 !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+  font-size: 1.05rem !important;
+  line-height: 28px !important;
+  outline: none;
+  resize: vertical;
+  background-image: linear-gradient(rgba(147, 197, 253, 0.15) 1px, transparent 1px) !important;
+  background-size: 100% 28px !important;
+}
+
+.notebook-textarea::placeholder {
+  color: rgba(45, 55, 72, 0.5) !important;
+}
+
+.notebook-textarea:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0px 0px 0px 3px rgba(59, 130, 246, 0.15) !important;
+}
+
+.notebook-btn {
+  background-color: #3b82f6 !important;
+  color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  box-shadow: 4px 4px 0px #2d3748 !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 1.1rem !important;
+  border-radius: 8px !important;
+  padding: 0.6rem 1.2rem !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.notebook-btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px #2d3748 !important;
+}
+
+.notebook-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #2d3748 !important;
+}
+
+.notebook-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notebook-btn-secondary {
+  background-color: #f3f4f6 !important;
+  color: #2d3748 !important;
+}
+
+.notebook-btn-success {
+  background-color: #10b981 !important;
+  color: #fff !important;
+}
+
+.notebook-tab-header {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #2d3748;
+  padding-bottom: 2px;
+}
+
+.notebook-tab-btn {
+  background: transparent;
+  border: 2px solid transparent;
+  border-bottom: none;
+  font-family: 'Itim', cursive, sans-serif !important;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+  transition: all 0.2s ease;
+}
+
+.notebook-tab-btn.active {
+  border-color: #2d3748;
+  background-color: #fffdf5;
+  color: #1e3a8a;
+  transform: translateY(2px);
+}
+
+/* Notebook Preset Badges */
+.notebook-badge {
+  font-family: 'Itim', cursive, sans-serif !important;
+  border: 2px solid #2d3748 !important;
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  padding: 2px 8px !important;
+  font-size: 0.85rem !important;
+  border-radius: 6px !important;
+  box-shadow: 2px 2px 0px #2d3748 !important;
+}
+
+.notebook-badge-green {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+
+.notebook-badge-blue {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+}
+
+.notebook-badge-red {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
+/* Notebook Results Timeline */
+.notebook-timeline-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid #2d3748 !important;
+  background-color: #fff !important;
+  color: #2d3748 !important;
+  font-weight: 700;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.notebook-timeline-dot.active {
+  background-color: #3b82f6 !important;
+  color: #fff !important;
+  transform: scale(1.1);
+}
+
+.notebook-timeline-dot.completed {
+  background-color: #10b981 !important;
+  color: #fff !important;
+}
+
+/* Notebook card previews */
+.notebook-preview-box {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+  border: 2px dashed #2d3748 !important;
+  border-radius: 10px;
+  padding: 1rem;
+  color: #2d3748 !important;
+}
+
+/* Verification Modal */
+.verification-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(8, 11, 17, 0.8);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.verification-modal-content {
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  background-color: #fffef5 !important;
+  background-image: linear-gradient(rgba(147, 197, 253, 0.2) 1px, transparent 1px) !important;
+  background-size: 100% 28px !important;
+  border: 3px solid #2d3748 !important;
+  box-shadow: 10px 10px 0px #2d3748 !important;
+  border-radius: 20px !important;
+  color: #2d3748 !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.verification-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 3px solid #2d3748;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #fffdf5;
+  border-radius: 17px 17px 0 0;
+}
+
+.verification-header h2 {
+  font-size: 1.6rem;
+  color: #1e3a8a;
+}
+
+.verification-body {
+  padding: 2rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.verification-card-edit {
+  border: 3px solid #2d3748;
+  border-radius: 12px;
+  background-color: #fff;
+  padding: 1.5rem;
+  box-shadow: 4px 4px 0px #2d3748;
+  position: relative;
+}
+
+.verification-card-edit::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 20px;
+  width: 1px;
+  background-color: rgba(239, 68, 68, 0.3);
+  pointer-events: none;
+}
+
+.verification-card-edit-content {
+  padding-left: 1.5rem;
+}
+
+.verification-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.verification-card-header h3 {
+  font-size: 1.2rem;
+  color: #1e3a8a;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.verification-footer {
+  padding: 1.5rem 2rem;
+  border-top: 3px solid #2d3748;
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  background-color: #fffdf5;
+  border-radius: 0 0 17px 17px;
+}
+
+.verification-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.verification-field-group label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.verification-input {
+  border: 2px solid #2d3748 !important;
+  background-color: #fff !important;
+  color: #2d3748 !important;
+  border-radius: 8px !important;
+  padding: 0.55rem 0.75rem !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+  font-size: 1.05rem !important;
+  outline: none;
+  width: 100%;
+}
+
+.verification-input:focus {
+  border-color: #3b82f6 !important;
+}
+
+.verification-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.verification-options-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.50rem;
+  margin-top: 0.5rem;
+}
+
+.verification-option-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.verification-radio {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #10b981;
+}
+
+/* Praise Anime Modal */
+.praise-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(8, 11, 17, 0.8);
+  backdrop-filter: blur(6px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.praise-modal-content {
+  width: 100%;
+  max-width: 450px;
+  background: #fffdf5 !important;
+  border: 4px solid #2d3748 !important;
+  border-radius: 24px !important;
+  box-shadow: 8px 8px 0px #2d3748 !important;
+  color: #2d3748 !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+  padding: 2.5rem 2rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.praise-stars {
+  font-size: 2.5rem;
+  color: #fbbf24;
+  margin-bottom: 0.5rem;
+  text-shadow: 2px 2px 0px #2d3748;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.praise-character {
+  font-size: 4.5rem;
+  margin: 0.5rem 0 1rem;
+  display: inline-block;
+  animation: bounce 0.8s infinite alternate ease-in-out;
+}
+
+.praise-title {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: #e11d48;
+  margin-bottom: 0.75rem;
+  text-shadow: 2px 2px 0px #fed7aa;
+}
+
+.praise-description {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  margin-bottom: 1.75rem;
+}
+
+.notebook-hint-box {
+  background-color: #fffbeb !important;
+  border: 2px solid #f59e0b !important;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: #92400e !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+  line-height: 1.4 !important;
+  margin-top: 1rem;
+  box-shadow: 2px 2px 0 #f59e0b;
+}
+
+/* --- GLOBAL NOTEBOOK BINDER OVERRIDES --- */
+body {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-body) !important;
+}
+
+/* Make headers global handwriting font */
+h1, h2, h3, h4, h5, h6, span, button, input, select, textarea, div {
+  font-family: 'Pangolin', 'Itim', cursive, sans-serif !important;
+}
+
+.sidebar {
+  background-color: var(--bg-sidebar) !important;
+  border-right: 3px solid var(--border-color) !important;
+}
+
+.brand-text .title-main {
+  background: none !important;
+  -webkit-text-fill-color: initial !important;
+  color: #1e3a8a !important;
+}
+
+.brand-text .title-sub {
+  color: #4b5563 !important;
+}
+
+.nav-item {
+  color: #4b5563 !important;
+  border: 2px solid transparent;
+}
+
+.nav-item:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  color: #1e3a8a !important;
+  border-color: #2d3748 !important;
+}
+
+.nav-item.active {
+  background: #dbeafe !important;
+  color: #1e3a8a !important;
+  border: 2px solid #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+}
+
+.top-header {
+  background-color: #fffef9 !important;
+  border-bottom: 3px solid var(--border-color) !important;
+}
+
+.subject-selector-wrapper {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  box-shadow: 2px 2px 0px #2d3748 !important;
+}
+
+.subject-select {
+  color: #2d3748 !important;
+}
+
+.subject-select option {
+  background-color: #fff !important;
+  color: #2d3748 !important;
+}
+
+.header-stat {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  box-shadow: 2px 2px 0px #2d3748 !important;
+}
+
+.header-stat:hover {
+  background-color: #f3f4f6 !important;
+}
+
+.stat-value {
+  color: #2d3748 !important;
+}
+
+/* Glass Panels to Notebook ruled/cream panels */
+.glass-panel {
+  background-color: #fffef5 !important;
+  background-image: linear-gradient(rgba(147, 197, 253, 0.12) 1px, transparent 1px) !important;
+  background-size: 100% 28px !important;
+  border: 3px solid #2d3748 !important;
+  box-shadow: 6px 6px 0px #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+/* Welcome banner styling */
+.welcome-banner {
+  background: #fef3c7 !important; /* Soft yellow highlighter */
+  border: 3px solid #2d3748 !important;
+  box-shadow: 6px 6px 0px #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+.welcome-text h1 {
+  background: none !important;
+  -webkit-text-fill-color: initial !important;
+  color: #1e3a8a !important;
+}
+
+.welcome-text p {
+  color: #4b5563 !important;
+}
+
+/* Stats Cards */
+.stat-card {
+  background-color: #fff !important;
+  border: 3px solid #2d3748 !important;
+  box-shadow: 4px 4px 0px #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+.stat-card:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 6px 6px 0px #2d3748 !important;
+}
+
+.card-glow-green:hover { border-color: #10b981 !important; }
+.card-glow-yellow:hover { border-color: #f59e0b !important; }
+.card-glow-red:hover { border-color: #ef4444 !important; }
+
+/* Leitner Box items */
+.box-item {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+.box-item:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 5px 5px 0px #2d3748 !important;
+}
+
+.box-badge-num {
+  background-color: #dbeafe !important;
+  border: 2px solid #2d3748 !important;
+  color: #1e3a8a !important;
+}
+
+.box-badge-num.bg-yellow {
+  background-color: #ffedd5 !important;
+  border-color: #2d3748 !important;
+  color: #c2410c !important;
+}
+
+.box-badge-num.bg-green {
+  background-color: #d1fae5 !important;
+  border-color: #2d3748 !important;
+  color: #065f46 !important;
+}
+
+.box-count-badge {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+/* Buttons in global theme */
+.btn {
+  border: 2px solid #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 5px 5px 0px #2d3748 !important;
+}
+
+.btn:active:not(:disabled) {
+  transform: translate(1px, 1px) !important;
+  box-shadow: 1px 1px 0px #2d3748 !important;
+}
+
+.btn-primary {
+  background-color: #3b82f6 !important;
+}
+
+.btn-secondary {
+  background-color: #f3f4f6 !important;
+  color: #2d3748 !important;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  color: #2d3748 !important;
+}
+
+/* Flashcards */
+.flashcard {
+  border: 3px solid #2d3748 !important;
+  box-shadow: 8px 8px 0px #2d3748 !important;
+}
+
+.card-face {
+  background-color: #fffef7 !important;
+  background-image: linear-gradient(rgba(147, 197, 253, 0.15) 1px, transparent 1px) !important;
+  background-size: 100% 28px !important;
+  color: #2d3748 !important;
+}
+
+.card-tag-badge {
+  border: 2px solid #2d3748 !important;
+  background-color: #fff !important;
+  color: #2d3748 !important;
+}
+
+.card-timer-display {
+  border: 2px solid #2d3748 !important;
+  background-color: #fff !important;
+  color: #2d3748 !important;
+}
+
+.card-question-text {
+  color: #1e3a8a !important;
+  font-size: 1.25rem !important;
+  line-height: 1.5 !important;
+}
+
+.quiz-option-btn {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  color: #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+}
+
+.quiz-option-btn:hover {
+  background-color: #f3f4f6 !important;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px #2d3748 !important;
+}
+
+.quiz-option-btn.selected {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  border-color: #1e40af !important;
+}
+
+.essay-textarea {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  color: #2d3748 !important;
+  font-family: 'Itim', cursive, sans-serif !important;
+}
+
+.card-answer-text {
+  color: #059669 !important;
+  font-size: 1.15rem !important;
+  line-height: 1.5 !important;
+}
+
+.card-tutor-bubble {
+  background-color: #f0fdf4 !important;
+  border: 2px solid #2d3748 !important;
+  color: #1e293b !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+}
+
+/* Grading buttons */
+.btn-grade {
+  border: 2px solid #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+.btn-grade:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 5px 5px 0px #2d3748 !important;
+}
+
+.btn-grade-vhard { background-color: #fee2e2 !important; }
+.btn-grade-hard { background-color: #ffedd5 !important; }
+.btn-grade-easy { background-color: #d1fae5 !important; }
+.btn-grade-veasy { background-color: #ccfbf1 !important; }
+
+/* Tutor page speech bubbles */
+.chat-tutor-bubble {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  color: #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  border-radius: 12px 12px 12px 0px !important;
+}
+
+.chat-user-bubble {
+  background-color: #dbeafe !important;
+  border: 2px solid #2d3748 !important;
+  color: #1e3a8a !important;
+  box-shadow: -3px 3px 0px #2d3748 !important;
+  border-radius: 12px 12px 0px 12px !important;
+}
+
+.tutor-chat-input-wrapper {
+  background-color: #fff !important;
+  border: 3px solid #2d3748 !important;
+  box-shadow: 4px 4px 0px #2d3748 !important;
+}
+
+.tutor-chat-input {
+  color: #2d3748 !important;
+  background: transparent !important;
+}
+
+/* Modals */
+.modal-content {
+  background-color: #fffef7 !important;
+  border: 3px solid #2d3748 !important;
+  box-shadow: 10px 10px 0px #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+.mood-option-card {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+.mood-option-card:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 5px 5px 0px #2d3748 !important;
+}
+
+.mood-option-card.active {
+  background-color: #dbeafe !important;
+  border-color: #1e3a8a !important;
+}
+
+.checkpoint-option-btn {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  color: #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+}
+
+.checkpoint-option-btn:hover {
+  background-color: #f3f4f6 !important;
+}
+
+.checkpoint-option-btn.correct {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+
+.checkpoint-option-btn.wrong {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
+.tutor-avatar {
+  background-color: #fff !important;
+  border: 2px solid #2d3748 !important;
+  color: #2d3748 !important;
+}
+
+/* Knowledge Map Nodes styling */
+.node-active circle {
+  fill: #fffbeb !important;
+  stroke: #f59e0b !important;
+  stroke-width: 3px !important;
+}
+
+.node-mastered circle {
+  fill: #d1fae5 !important;
+  stroke: #059669 !important;
+  stroke-width: 3px !important;
+}
+
+.node-locked circle {
+  fill: #f3f4f6 !important;
+  stroke: #9ca3af !important;
+  stroke-width: 2px !important;
+}
+
+.map-link {
+  stroke: #2d3748 !important;
+  stroke-width: 3px !important;
+}
+
+.map-link.active-path {
+  stroke: #3b82f6 !important;
+  stroke-dasharray: 4 !important;
+  animation: mapFlow 10s infinite linear;
+}
+
+@keyframes mapFlow {
+  to { stroke-dashoffset: -40; }
+}
+
+/* Colorful Pastel Theme Accents */
+body {
+  background-color: #dbeafe !important; /* Vibrant soft sky blue desk background */
+}
+
+.sidebar {
+  background-color: #fff9e6 !important; /* Cute warm yellow binder side margin */
+}
+
+/* Notebook Binder tab divider menu look */
+.nav-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+.nav-item {
+  border: 2px solid #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  margin-bottom: 0.25rem !important;
+  border-radius: 10px !important;
+  color: #2d3748 !important;
+  transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+  opacity: 0.95;
+}
+
+.nav-item:hover {
+  transform: translate(-1px, -1px) !important;
+  box-shadow: 4px 4px 0px #2d3748 !important;
+  opacity: 1;
+}
+
+.nav-item.active {
+  box-shadow: 0px 0px 0px #2d3748 !important;
+  transform: translate(3px, 3px) !important;
+  border-width: 3px !important;
+  opacity: 1;
+}
+
+/* Individual tab cover colors */
+.nav-item:nth-child(1) { background-color: #ffd1d7 !important; } /* Dashboard: Rose Pink */
+.nav-item:nth-child(2) { background-color: #ffe89e !important; } /* Leitner: Orange/Gold */
+.nav-item:nth-child(3) { background-color: #bbf7d0 !important; } /* OCR: Emerald Green */
+.nav-item:nth-child(4) { background-color: #bae6fd !important; } /* Map: Sky Blue */
+.nav-item:nth-child(5) { background-color: #e9d5ff !important; } /* Tutor: Purple/Violet */
+.nav-item:nth-child(6) { background-color: #f1f5f9 !important; } /* Settings: Soft Gray */
+
+.nav-item.active::before {
+  content: "📌" !important;
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  font-size: 1.1rem;
+}
+
+/* Stat Cards distribution highlights */
+.card-glow-green {
+  background-color: #d1fae5 !important; /* Vibrant Emerald Green */
+  border-color: #2d3748 !important;
+}
+
+.card-glow-yellow {
+  background-color: #fef3c7 !important; /* Vibrant Warm Amber */
+  border-color: #2d3748 !important;
+}
+
+.card-glow-red {
+  background-color: #ffe4e6 !important; /* Vibrant Soft Rose */
+  border-color: #2d3748 !important;
+}
+
+/* Leitner Box Colorful Accents */
+.boxes-status-container .box-item:nth-child(1) {
+  background-color: #e0f2fe !important; /* Box 1 - Pastel Sky Blue */
+  border-color: #2d3748 !important;
+}
+
+.boxes-status-container .box-item:nth-child(2) {
+  background-color: #ffedd5 !important; /* Box 2 - Pastel Peach */
+  border-color: #2d3748 !important;
+}
+
+.boxes-status-container .box-item:nth-child(3) {
+  background-color: #d1fae5 !important; /* Box 3 - Pastel Mint */
+  border-color: #2d3748 !important;
+}
+
+.welcome-banner {
+  background-color: #fdf2f8 !important; /* warm rose paper */
+  background-image: radial-gradient(rgba(244, 63, 94, 0.05) 1.5px, transparent 0) !important;
+  background-size: 24px 24px !important;
+  border: 3px solid #2d3748 !important;
+  box-shadow: 5px 5px 0px #2d3748 !important;
+  border-radius: var(--radius-lg) !important;
+}
+
+.user-profile {
+  background-color: #e0f2fe !important; /* Light sky blue background */
+  border: 2px solid #2d3748 !important;
+  box-shadow: 3px 3px 0px #2d3748 !important;
+  border-radius: 12px;
+  padding: 0.5rem;
+}
+
+.avatar {
+  background-color: #f43f5e !important; /* Cute rose pink avatar circle */
+  color: #fff !important;
+  border: 2px solid #2d3748 !important;
+}
+
+.top-header {
+  background-color: #fffbeb !important; /* Warm yellow note paper background */
+}
+
+/* --- JAPANESE CAMPUS GRAPH BINDER THEME FOR RETRIEVAL & MAP --- */
+.card-face, .study-controls-panel, .node-detail-sidebar, .ocr-results {
+  background-color: #fffefb !important;
+  background-image: linear-gradient(rgba(147, 197, 253, 0.15) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(147, 197, 253, 0.15) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important; /* Japanese school grid paper! */
+}
+
+/* Make Study Layout centered & full width paper (No sidebar filters) */
+.study-layout {
+  display: flex !important;
+  justify-content: center !important;
+}
+
+.study-arena {
+  width: 100% !important;
+  max-width: 850px !important;
+  margin: 0 auto !important;
+}
+
+/* Tango-cho Vocabulary Card Ring Effect */
+.flashcard-wrapper {
+  position: relative !important;
+  margin-left: 2rem !important; /* Space for the ring */
+}
+
+.flashcard-wrapper::before {
+  content: "" !important;
+  position: absolute;
+  top: 50%;
+  left: -20px;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border: 6px solid #b8c2cc !important; /* Chrome metal ring */
+  border-radius: 50% !important;
+  box-shadow: 2px 2px 0px #2d3748 !important;
+  z-index: 100 !important;
+  pointer-events: none;
+}
+
+.card-face::before {
+  content: "" !important;
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  background-color: #e0f2fe !important;
+  border: 3px solid #2d3748 !important;
+  border-radius: 50% !important;
+  box-shadow: inset 1px 1px 3px rgba(0,0,0,0.3) !important;
+  z-index: 99 !important;
+}
+
+/* Japanese School Hanko approval stamps for Knowledge Map Nodes */
+.node-mastered circle {
+  fill: #ffe4e6 !important; /* Soft rose red Hanko base */
+  stroke: #ef4444 !important; /* Crayon red */
+  stroke-width: 5px !important;
+  stroke-dasharray: 2px 3px !important; /* Scribbled/crayon effect */
+  filter: drop-shadow(2px 2px 0px #2d3748) !important;
+}
+
+.node-active circle {
+  fill: #fef9c3 !important; /* Soft active yellow */
+  stroke: #d97706 !important; /* Warm crayon orange/yellow outline */
+  stroke-width: 4px !important;
+  stroke-dasharray: 2px 2px !important;
+  filter: drop-shadow(2px 2px 0px #2d3748) !important;
+}
+
+.node-red-ready circle {
+  fill: #ffedd5 !important; /* Orange/Peach base */
+  stroke: #ea580c !important; /* Fire orange crayon */
+  stroke-width: 5px !important;
+  stroke-dasharray: 3px 2px !important;
+  filter: drop-shadow(2px 2px 0px #2d3748) !important;
+  animation: crayon-pulse 1s infinite alternate ease-in-out !important;
+}
+
+@keyframes crayon-pulse {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.06); }
+}
+
+.node-locked circle {
+  fill: #f8fafc !important; /* Off white base */
+  stroke: #64748b !important; /* Pencil Gray outline */
+  stroke-width: 3px !important;
+  stroke-dasharray: 4px 4px !important;
+}
+
+/* Override default dark SVG backgrounds */
+#knowledge-map-svg {
+  background: transparent !important; /* Let Washi paper show through! */
+}
+
+/* Japanese Washi Textured Paper for SVG Map background */
+.map-container {
+  background-color: #fcfaf2 !important; /* Warm organic Japanese Washi paper color */
+  background-image: radial-gradient(rgba(180, 140, 90, 0.08) 1.5px, transparent 0) !important; /* Washi organic fiber specks */
+  background-size: 32px 32px !important;
+  border: 3px dashed #2d3748 !important;
+  box-shadow: 6px 6px 0px #2d3748 !important;
+  border-radius: 16px !important;
+}
+
+.map-link {
+  stroke: #64748b !important; /* Hand drawn pencil path lines */
+  stroke-width: 4px !important;
+  stroke-linecap: round !important;
+  stroke-dasharray: 3px 5px !important; /* Hand sketch pencil dots */
+}
+
+.map-link.active-path {
+  stroke: #ef4444 !important; /* Red path crayon path */
+  stroke-width: 6px !important;
+  stroke-dasharray: none !important;
+}
+
+.notebook-hint-box {
+  background-color: #fef9c3 !important;
+  border: 2px dashed #ca8a04 !important;
+  font-family: 'Pangolin', 'Itim', cursive, sans-serif !important;
+  box-shadow: 2px 2px 0px #2d3748 !important;
+}
+
+.node-text {
+  font-family: 'Pangolin', 'Itim', cursive, sans-serif !important;
+  font-weight: 800 !important;
+  font-size: 1.35rem !important;
+  text-anchor: middle !important;
+  dominant-baseline: central !important; /* center vertically perfectly! */
+}
+
+.node-mastered text.node-text {
+  fill: #ef4444 !important; /* Crayon red text */
+}
+
+.node-active text.node-text {
+  fill: #b45309 !important; /* Crayon amber text */
+}
+
+.node-red-ready text.node-text {
+  fill: #ea580c !important; /* Crayon orange text */
+}
+
+.node-locked text.node-text {
+  fill: #94a3b8 !important; /* soft graphite pencil gray text */
+}
+
+/* --- KNOWLEDGE MAP DYNAMIC ROADMAPS LAYOUT OVERRIDES --- */
+.knowledge-map-layout {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 1.5rem !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.map-sidebar-pane {
+  width: 320px !important;
+  background-color: #fffefb !important;
+  background-image: linear-gradient(rgba(147, 197, 253, 0.15) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(147, 197, 253, 0.15) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+  border: 3px solid #2d3748 !important;
+  box-shadow: 4px 4px 0px #2d3748 !important;
+  border-radius: 16px !important;
+  padding: 1.25rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1rem !important;
+}
+
+.map-main-pane {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1rem !important;
+  min-width: 0 !important;
+}
+
+.saved-roadmaps-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.saved-roadmaps-list-scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 3px;
+}
+
+/* --- DETAILED MAP SIDEBAR HEIGHT FIX & SCROLLING --- */
+.node-detail-sidebar {
+  overflow-y: auto !important;
+  max-height: calc(100% - 20px) !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* --- TACTILE CLICK ANIMATIONS --- */
+.btn:active, .notebook-btn:active, .nav-item:active {
+  transform: translate(1px, 1px) scale(0.98) !important;
+  box-shadow: 1px 1px 0px #2d3748 !important;
+}
+
+/* --- HOVER ELEVATION ANIMATIONS --- */
+.notebook-preview-box {
+  transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+}
+
+.notebook-preview-box:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: 6px 6px 0px #2d3748 !important;
+}
+
+.nav-item {
+  position: relative;
+}
+
+/* --- WOBBLY NAVIGATION TAB PIN --- */
+@keyframes pin-wobble {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  30% { transform: rotate(-10deg) scale(1.05); }
+  70% { transform: rotate(10deg) scale(1.05); }
+}
+
+.nav-item.active::before {
+  animation: pin-wobble 2s infinite ease-in-out !important;
+}
+
+/* --- SHINY GLOWING STICKERS --- */
+@keyframes sticker-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(3deg); }
+}
+
+.user-profile {
+  position: relative;
+}
+
+.user-profile::after {
+  content: "✨" !important;
+  position: absolute;
+  top: -10px;
+  right: -5px;
+  font-size: 1.2rem;
+  animation: sticker-float 3s infinite ease-in-out;
+  pointer-events: none;
+}
+
+.avatar {
+  animation: sticker-float 2.5s infinite ease-in-out alternate;
+}
+
+.welcome-banner {
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-banner::after {
+  content: "⭐" !important;
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  font-size: 1.5rem;
+  animation: sticker-float 4s infinite ease-in-out;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+/* --- PROGRESS FILL LOADING ANIMATION --- */
+@keyframes progress-load {
+  from { width: 0; }
+}
+
+.progress-fill {
+  animation: progress-load 1s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* --- MAP NODE HIGHLIGHT ANIMATION --- */
+.map-node:hover {
+  transform: scale(1.08) !important;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+}
+
+/* --- DASHBOARD PROGRESS BAR STYLING OVERRIDES --- */
+.progress-fill {
+  background-color: #3b82f6 !important; /* Sky Blue for Box 1 */
+  height: 100%;
+}
+
+.progress-fill.bg-yellow {
+  background-color: #f59e0b !important; /* Amber for Box 2 */
+}
+
+.progress-fill.bg-green {
+  background-color: #10b981 !important; /* Mint for Box 3 */
+}
+
+.progress-bar-container {
+  background-color: #e2e8f0 !important;
+  border: 1.5px solid #2d3748 !important;
+  height: 12px !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+}
+
