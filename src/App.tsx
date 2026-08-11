@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { INITIAL_SUBJECTS } from "./db";
 import type { Card, Mood, AppSettings, CheckpointQuestion, LearningRoadmap } from "./types";
+import StarterQuest from "./StarterQuest";
 
 // Checkpoint questions data
 const CHECKPOINT_QUESTIONS: Record<string, CheckpointQuestion[]> = {
@@ -272,8 +273,10 @@ export default function App() {
   const [ocrPreviewSrc, setOcrPreviewSrc] = useState<string>("https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?auto=format&fit=crop&w=500&q=80");
   
   // OCR Input Type, Verification Modal, Praise Modal & Hint state additions
-  const [ocrInputType, setOcrInputType] = useState<'file' | 'text'>('file');
+  const [ocrInputType, setOcrInputType] = useState<'file' | 'text'>('text');
   const [ocrTextContent, setOcrTextContent] = useState<string>("");
+  const [documentTags, setDocumentTags] = useState<string[]>(["Hóa học", "Ôn thi"]);
+  const [customSubject, setCustomSubject] = useState<string>("");
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState<boolean>(false);
   const [verificationCards, setVerificationCards] = useState<Card[]>([]);
   const [showHint, setShowHint] = useState<boolean>(false);
@@ -284,6 +287,7 @@ export default function App() {
   // Map state
   const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
   const [activeMapId, setActiveMapId] = useState<string>("");
+  const [newlyCreatedMapId, setNewlyCreatedMapId] = useState<string>("");
 
   // Chat Tutor state
   const [chatInput, setChatInput] = useState<string>("");
@@ -363,6 +367,27 @@ export default function App() {
   const saveCardsState = (newCards: Card[]) => {
     setCards(newCards);
     localStorage.setItem("retrieval_cards", JSON.stringify(newCards));
+  };
+
+  const saveRoadmapsState = (newRoadmaps: LearningRoadmap[]) => {
+    setSavedRoadmaps(newRoadmaps);
+    localStorage.setItem("saved_roadmaps", JSON.stringify(newRoadmaps));
+  };
+
+  const recordLearningEvent = (event: string, detail: Record<string, unknown> = {}) => {
+    const key = "learning_progress";
+    const history = JSON.parse(localStorage.getItem(key) || "[]") as Array<Record<string, unknown>>;
+    localStorage.setItem(key, JSON.stringify([...history, { event, at: new Date().toISOString(), ...detail }].slice(-500)));
+  };
+
+  const openNewRoadmap = (roadmap: LearningRoadmap) => {
+    setActiveRoadmap(roadmap);
+    setActiveMapId(roadmap.id);
+    setNewlyCreatedMapId(roadmap.id);
+    setSelectedMapNodeId(null);
+    setActiveTab("knowledge-map");
+    recordLearningEvent("roadmap_created", { roadmapId: roadmap.id, topicName: roadmap.topicName });
+    window.setTimeout(() => setNewlyCreatedMapId(""), 5000);
   };
 
   // --- TIMER EFFECT ---
@@ -565,16 +590,8 @@ export default function App() {
   // --- GEMINI API INTEGRATIONS ---
   const callGemini = async (prompt: string, sysPrompt: string = "") => {
     if (!geminiApiKey) throw new Error("API Key chưa được thiết lập.");
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
-    
-    const body: any = {
-      contents: [{ parts: [{ text: prompt }] }]
-    };
-    if (sysPrompt) {
-      body.systemInstruction = {
-        parts: [{ text: sysPrompt }]
-      };
-    }
+    const url = "/api/nvidia/v1/chat/completions";
+    const body: any = { model: "nvidia/nemotron-3-super-120b-a12b", temperature: 0.7, max_tokens: 4096, messages: [{ role: "system", content: sysPrompt || "Bạn là gia sư học tập hữu ích." }, { role: "user", content: prompt }] };
 
     const response = await fetch(url, {
       method: "POST",
@@ -587,7 +604,34 @@ export default function App() {
       throw new Error(err.error?.message || `HTTP ${response.status}`);
     }
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return data.choices?.[0]?.message?.content || "";
+  };
+
+  // Free-response grading has its own NVIDIA model so it can focus on feedback quality.
+  const callGemmaGrader = async (prompt: string, sysPrompt: string = "") => {
+    const response = await fetch("/api/nvidia/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemma-4-31b-it",
+        messages: [
+          ...(sysPrompt ? [{ role: "system", content: sysPrompt }] : []),
+          { role: "user", content: prompt }
+        ],
+        chat_template_kwargs: { enable_thinking: true },
+        max_tokens: 16384,
+        stream: false,
+        temperature: 1,
+        top_p: 0.95
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "";
   };
 
   const callGeminiMultimodal = async (prompt: string, base64: string, mime: string, sysPrompt: string = "") => {
@@ -667,7 +711,7 @@ export default function App() {
   };
 
   const fetchTutorGradingFeedback = (ans: string, greenCorrect: boolean) => {
-    setTutorCardFeedback("Đang kết nối Gia sư AI chấm điểm...");
+    setTutorCardFeedback("");
     
     if (geminiApiKey) {
       const prompt = `Câu hỏi ôn tập: "${activeCard.question}"
@@ -678,7 +722,8 @@ Nhiệm vụ của bạn là hãy đóng vai trò là một Gia sư AI chấm b�
 Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) bằng tiếng Việt cho học sinh.
 Đánh giá độ chính xác (ví dụ đúng khoảng bao nhiêu phần trăm, có ghi được các ý/công thức cốt lõi hay không), chỉ ra lỗi sai kiến thức hoặc hiểu lầm (nếu có), và cung cấp 1 mẹo học tập hoặc định hướng nhanh để cải thiện trí nhớ. Hãy trả lời cực kỳ súc tích, thân thiện và động viên học sinh.`;
 
-      callGemini(prompt, "Bạn là Gia sư AI chấm bài cho học sinh THPT Hóa học 12 và Vật lý 12.")
+      const grader = activeCard.type === "green" ? callGemini : callGemmaGrader;
+      grader(prompt, "Bạn là Gia sư AI chấm bài cho học sinh THPT Hóa học 12 và Vật lý 12.")
         .then(res => {
           setTutorCardFeedback(res);
         })
@@ -766,6 +811,7 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
     });
 
     saveCardsState(updated);
+    recordLearningEvent("card_reviewed", { cardId: activeCard.id, grade, box: newBox, timeTaken: secondsElapsed });
 
     // Points addition
     const pts = { vhard: 5, hard: 10, easy: 20, veasy: 30 };
@@ -917,12 +963,13 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
       setTimeout(() => {
         setOcrStatus("done");
         const presetData = ROADMAP_PRESETS[ocrPresetsSel] || ROADMAP_PRESETS["chemistry-este"];
+        const firstDocumentLine = ocrTextContent.split("\n").map(line => line.trim()).find(Boolean);
         const clonedRoadmap = {
           ...presetData,
           id: `rm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          topicName: presetData.topicName + ` (${new Date().toLocaleTimeString()})`
+          topicName: firstDocumentLine ? firstDocumentLine.replace(/^#+\s*/, "").slice(0, 72) : presetData.topicName + ` (${new Date().toLocaleTimeString()})`
         };
-        setActiveRoadmap(clonedRoadmap);
+        openNewRoadmap(clonedRoadmap);
         if (clonedRoadmap.milestones.length > 0) {
           setSelectedMilestoneId(clonedRoadmap.milestones[0].id);
         }
@@ -1062,7 +1109,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
             if (!parsed.id) {
               parsed.id = `rm-${Date.now()}`;
             }
-            setActiveRoadmap(parsed);
+            openNewRoadmap(parsed);
             if (parsed.milestones && parsed.milestones.length > 0) {
               setSelectedMilestoneId(parsed.milestones[0].id);
             }
@@ -1155,10 +1202,13 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
     saveCardsState(updated);
 
     const completedMilestones = activeRoadmap.milestones.map(m => ({ ...m, status: "completed" as const }));
-    setActiveRoadmap({
+    const completedRoadmap = {
       ...activeRoadmap,
       milestones: completedMilestones
-    });
+    };
+    setActiveRoadmap(completedRoadmap);
+    saveRoadmapsState(savedRoadmaps.map(roadmap => roadmap.id === completedRoadmap.id ? completedRoadmap : roadmap));
+    recordLearningEvent("roadmap_activated", { roadmapId: completedRoadmap.id, cardsAdded: allCardsToAdd.length });
 
     setPoints(prev => {
       const added = prev + 100;
@@ -1219,10 +1269,13 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
     // Update activeRoadmap milestones to completed
     if (activeRoadmap) {
       const completedMilestones = activeRoadmap.milestones.map(m => ({ ...m, status: "completed" as const }));
-      setActiveRoadmap({
+      const completedRoadmap = {
         ...activeRoadmap,
         milestones: completedMilestones
-      });
+      };
+      setActiveRoadmap(completedRoadmap);
+      saveRoadmapsState(savedRoadmaps.map(roadmap => roadmap.id === completedRoadmap.id ? completedRoadmap : roadmap));
+      recordLearningEvent("roadmap_activated", { roadmapId: completedRoadmap.id, cardsAdded: duplicatesRemoved.length });
     }
 
     setPoints(prev => {
@@ -1232,6 +1285,8 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
     });
 
     setIsVerificationModalOpen(false);
+    setActiveMapId(activeRoadmap?.id || activeMapId);
+    setActiveTab("knowledge-map");
     alert(`🎉 Xác nhận thành công! Đã chuyển ${duplicatesRemoved.length} thẻ lý thuyết vào Kho lưu trữ Leitner chính thức.`);
   };
 
@@ -1322,7 +1377,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
           </a>
           <a onClick={() => setActiveTab("ocr")} className={`nav-item ${activeTab === "ocr" ? "active" : ""}`}>
             <i className="fa-solid fa-expand"></i>
-            <span>Số hóa & AI OCR</span>
+            <span>Tạo tài liệu học tập</span>
           </a>
           <a onClick={() => setActiveTab("knowledge-map")} className={`nav-item ${activeTab === "knowledge-map" ? "active" : ""}`}>
             <i className="fa-solid fa-network-wired"></i>
@@ -1422,8 +1477,8 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
           {/* TAB: DASHBOARD */}
           {activeTab === "dashboard" && (
             <section className="tab-content active">
-              {cards.length === 0 ? (
-                <div className="glass-panel notebook-paper" style={{ padding: "2.5rem 2rem 2.5rem 3.5rem", position: "relative", minHeight: "450px" }}>
+              {cards.length === 0 ? (<><StarterQuest onStart={() => { setActiveTab("ocr"); setOcrInputType("text"); }} />
+                <div className="legacy-starter glass-panel notebook-paper" style={{ padding: "2.5rem 2rem 2.5rem 3.5rem", position: "relative", minHeight: "450px" }}>
                   <div className="spiral-rings">
                     <div className="spiral-ring"></div>
                     <div className="spiral-ring"></div>
@@ -1456,8 +1511,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                       </button>
                     </div>
                   </div>
-                </div>
-              ) : (
+                </div></>) : (
                 <>
                   <div className="welcome-banner">
                     <div className="welcome-text">
@@ -2022,6 +2076,16 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
 
                   {ocrInputType === 'text' && (
                     <div className="uploaded-preview-container">
+                      <div className="document-maker-header">
+                        <span className="document-maker-kicker">✦ XƯỞNG TẠO LỘ TRÌNH</span>
+                        <h3>Tạo tài liệu học tập của bạn</h3>
+                        <p>Chọn thẻ để AI hiểu mục tiêu, sau đó dán kiến thức hoặc ghi chú cần học.</p>
+                        <div className="document-tag-groups">
+                          <div><small>Môn học</small>{["Hóa học","Vật lý","Toán học"].map(tag => <button key={tag} className={`document-tag ${documentTags.includes(tag) ? "selected" : ""}`} onClick={() => { setDocumentTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev.filter(t => !["Hóa học","Vật lý","Toán học"].includes(t)), tag]); if (tag === "Hóa học") setActiveSubject("chemistry"); if (tag === "Vật lý") setActiveSubject("physics"); }}>{tag}</button>)}</div>
+                          <div><small>Mục tiêu</small>{["Ôn thi","Hiểu bài","Luyện đề"].map(tag => <button key={tag} className={`document-tag ${documentTags.includes(tag) ? "selected" : ""}`} onClick={() => setDocumentTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</button>)}</div>
+                        </div>
+                        <div className="custom-subject-row"><input value={customSubject} onChange={(e) => setCustomSubject(e.target.value)} placeholder="Thêm môn học khác…" /><button onClick={() => { const tag = customSubject.trim(); if (tag && !documentTags.includes(tag)) setDocumentTags(prev => [...prev, tag]); setCustomSubject(""); }}>+ Thêm môn</button></div>
+                      </div>
                       <textarea 
                         className="notebook-textarea"
                         value={ocrTextContent}
@@ -2351,7 +2415,8 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                                 transform: isSelected ? "scale(1.02)" : "scale(1)",
                                 transition: "all 0.15s ease",
                                 backgroundColor: isSelected ? "#eff6ff" : "#fff",
-                                position: "relative"
+                                position: "relative",
+                                boxShadow: newlyCreatedMapId === rm.id ? "0 0 0 4px #f59e0b, 0 0 24px rgba(245, 158, 11, .58)" : undefined
                               }}
                             >
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.35rem" }}>
