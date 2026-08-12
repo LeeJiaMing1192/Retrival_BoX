@@ -11,6 +11,9 @@ export interface ReviewAttempt {
 
 export interface Card {
   id: string;
+  /** Keeps a card permanently scoped to the roadmap that generated it. */
+  roadmapId?: string;
+  milestoneId?: string;
   subjectId: string;
   chapterId: string;
   type: CardType;
@@ -70,4 +73,3 @@ export interface LearningRoadmap {
   difficulty: 'Dễ' | 'Trung bình' | 'Khó';
   milestones: RoadmapMilestone[];
 }
-

@@ -46,7 +46,7 @@ const CHECKPOINT_QUESTIONS: Record<string, CheckpointQuestion[]> = {
 
 
 // Dynamic learning roadmaps presets for offline fallback
-const ROADMAP_PRESETS: Record<string, LearningRoadmap> = {
+export const ROADMAP_PRESETS: Record<string, LearningRoadmap> = {
   "chemistry-este": {
     id: "rm-chem-este",
     topicName: "Chuyên đề Este - Lipit nâng cao (PDF)",
@@ -245,6 +245,7 @@ export default function App() {
   const [filterBloom, setFilterBloom] = useState({ green: true, yellow: true, red: true });
   const [filterBox, setFilterBox] = useState({ box1: true, box2: true, box3: true });
   const [forcePracticeAll, setForcePracticeAll] = useState<boolean>(false);
+  const [activePracticeRoadmapId, setActivePracticeRoadmapId] = useState<string | null>(null);
   const [filteredQueue, setFilteredQueue] = useState<Card[]>([]);
   const [currentQueueIndex, setCurrentQueueIndex] = useState<number>(0);
   
@@ -269,7 +270,7 @@ export default function App() {
   const [ocrFileSize, setOcrFileSize] = useState<string>("840 KB");
   const [ocrStatus, setOcrStatus] = useState<'idle' | 'scanning' | 'done'>('idle');
   const [ocrStep, setOcrStep] = useState<number>(0);
-  const [ocrPresetsSel, setOcrPresetsSel] = useState<string>("chemistry-este");
+  const [ocrPresetsSel] = useState<string>("chemistry-este");
   const [ocrPreviewSrc, setOcrPreviewSrc] = useState<string>("https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?auto=format&fit=crop&w=500&q=80");
   
   // OCR Input Type, Verification Modal, Praise Modal & Hint state additions
@@ -311,6 +312,15 @@ export default function App() {
 
   // --- LOCAL STORAGE LIFE CYCLE ---
   useEffect(() => {
+    // This release intentionally starts from a clean learning library: old demo cards/maps
+    // must never be mistaken for a learner's newly generated course.
+    const cleanDeployVersion = "clean-learning-library-v1";
+    if (localStorage.getItem("learning_library_version") !== cleanDeployVersion) {
+      localStorage.removeItem("retrieval_cards");
+      localStorage.removeItem("saved_roadmaps");
+      localStorage.removeItem("learning_progress");
+      localStorage.setItem("learning_library_version", cleanDeployVersion);
+    }
     // 1. Load cards (blank slate by default)
     const savedCards = localStorage.getItem("retrieval_cards");
     let loadedCards: Card[] = [];
@@ -389,6 +399,19 @@ export default function App() {
     recordLearningEvent("roadmap_created", { roadmapId: roadmap.id, topicName: roadmap.topicName });
     window.setTimeout(() => setNewlyCreatedMapId(""), 5000);
   };
+
+  const scopeRoadmapCards = (roadmap: LearningRoadmap): LearningRoadmap => ({
+    ...roadmap,
+    milestones: roadmap.milestones.map((milestone, milestoneIndex) => ({
+      ...milestone,
+      cards: milestone.cards.map((card, cardIndex) => ({
+        ...card,
+        id: `${roadmap.id}-${milestone.id || milestoneIndex}-${cardIndex + 1}`,
+        roadmapId: roadmap.id,
+        milestoneId: milestone.id
+      }))
+    }))
+  });
 
   // --- TIMER EFFECT ---
   const activeCard = filteredQueue[currentQueueIndex];
@@ -508,10 +531,11 @@ export default function App() {
   // --- RECALCULATE DETAILED QUEUE IN STUDY VIEWS ---
   useEffect(() => {
     rebuildStudyQueue();
-  }, [cards, activeSubject, filterChapter, filterBloom, filterBox, forcePracticeAll, mood, triggerBurnout, isCompressed]);
+  }, [cards, activeSubject, activePracticeRoadmapId, filterChapter, filterBloom, filterBox, forcePracticeAll, mood, triggerBurnout, isCompressed]);
 
   const rebuildStudyQueue = () => {
     let list = cards.filter(card => {
+      if (activePracticeRoadmapId && card.roadmapId !== activePracticeRoadmapId) return false;
       if (card.subjectId !== activeSubject) return false;
       if (filterChapter !== "all" && card.chapterId !== filterChapter) return false;
       
@@ -591,7 +615,7 @@ export default function App() {
   const callGemini = async (prompt: string, sysPrompt: string = "") => {
     if (!geminiApiKey) throw new Error("API Key chưa được thiết lập.");
     const url = "/api/nvidia";
-    const body: any = { model: "nvidia/nemotron-3-super-120b-a12b", temperature: 0.7, max_tokens: 4096, messages: [{ role: "system", content: sysPrompt || "Bạn là gia sư học tập hữu ích." }, { role: "user", content: prompt }] };
+    const body: any = { model: "nvidia/nemotron-3-super-120b-a12b", temperature: 0.35, max_tokens: 4096, messages: [{ role: "system", content: sysPrompt || "Bạn là gia sư học tập hữu ích." }, { role: "user", content: prompt }] };
 
     const response = await fetch(url, {
       method: "POST",
@@ -936,39 +960,26 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
     }
   };
 
-  const handlePresetSelect = (preset: string) => {
-    setOcrPresetsSel(preset);
-    setOcrStatus("idle");
-    setActiveRoadmap(null);
-    setActiveOCRBase64(""); // Reset custom raw content
-
-    if (preset === "chemistry-este") {
-      setOcrPreviewSrc("https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?auto=format&fit=crop&w=500&q=80");
-      setOcrFileName("chuyen_de_este_nang_cao.pdf");
-      setOcrFileSize("1.2 MB");
-    } else {
-      setOcrPreviewSrc("https://images.unsplash.com/photo-1507668077129-56e32842fceb?auto=format&fit=crop&w=500&q=80");
-      setOcrFileName("song_co_va_song_am.docx");
-      setOcrFileSize("890 KB");
-    }
-  };
-
   const triggerOCRScan = () => {
     setOcrStatus("scanning");
     setOcrStep(1);
 
-    const runOfflineMock = () => {
+    const createLocalDraft = () => {
       setTimeout(() => setOcrStep(2), 1200);
       setTimeout(() => setOcrStep(3), 2400);
       setTimeout(() => {
         setOcrStatus("done");
-        const presetData = ROADMAP_PRESETS[ocrPresetsSel] || ROADMAP_PRESETS["chemistry-este"];
         const firstDocumentLine = ocrTextContent.split("\n").map(line => line.trim()).find(Boolean);
-        const clonedRoadmap = {
-          ...presetData,
+        const clonedRoadmap = scopeRoadmapCards({
           id: `rm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          topicName: firstDocumentLine ? firstDocumentLine.replace(/^#+\s*/, "").slice(0, 72) : presetData.topicName + ` (${new Date().toLocaleTimeString()})`
-        };
+          topicName: firstDocumentLine ? firstDocumentLine.replace(/^#+\s*/, "").slice(0, 72) : "Lộ trình học mới",
+          difficulty: "Trung bình",
+          milestones: [
+            { id: "foundation", title: "Nền tảng", description: "Xác định khái niệm trọng tâm từ tài liệu.", timeEstimate: "15 phút", status: "active", cards: [] },
+            { id: "practice", title: "Luyện tập", description: "Áp dụng kiến thức vào bài tập ngắn.", timeEstimate: "20 phút", status: "locked", cards: [] },
+            { id: "review", title: "Tổng hợp", description: "Kết nối các ý chính và tự kiểm tra.", timeEstimate: "20 phút", status: "locked", cards: [] }
+          ]
+        });
         openNewRoadmap(clonedRoadmap);
         if (clonedRoadmap.milestones.length > 0) {
           setSelectedMilestoneId(clonedRoadmap.milestones[0].id);
@@ -992,7 +1003,7 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
       const presetSubject = ocrPresetsSel.includes("chemistry") ? "Hóa học 12" : "Vật lý 12";
       let prompt = `Bạn nhận được nội dung tài liệu học tập của học sinh. Môn học: ${presetSubject}.`;
       if (activeOCRBase64 && activeOCRMimeType === "text/plain") {
-        prompt += `\nNội dung văn bản trích xuất thô từ tài liệu:\n"${activeOCRBase64}"`;
+        prompt += `\nNội dung văn bản trích xuất từ tài liệu (chỉ dùng đúng nội dung này, không trộn kiến thức từ tài liệu khác):\n"${activeOCRBase64.slice(0, 12000)}"`;
       } else if (!activeOCRBase64) {
         const desc = ocrPresetsSel === "chemistry-este" ? 
           "Đề cương Chuyên đề Este - Lipit (khái niệm este, phản ứng este hóa, vinyl axetat, xà phòng hóa lipid, glixerol, este hữu cơ phức tạp)" : 
@@ -1001,10 +1012,10 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
       }
 
       prompt += `\n\nNhiệm vụ của bạn là hãy phân tích tài liệu này và thiết lập một Lộ trình học tập cá nhân hóa (Learning Roadmap) gồm đúng 3 chặng học tập (Milestones) sắp xếp theo mức độ nhận thức tăng dần của Bloom's Taxonomy.
-Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
-- Chặng 1: Thẻ Xanh (Recall - trắc nghiệm 4 lựa chọn).
-- Chặng 2: Thẻ Vàng (Apply - câu hỏi tự luận vận dụng ngắn).
-- Chặng 3: Thẻ Đỏ (Synthesize - câu hỏi tự luận tổng hợp sâu/liên chương).
+Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ dựa vào tài liệu trên:
+- Mỗi chặng phải có ít nhất 1 Thẻ Xanh (Recall - trắc nghiệm 4 lựa chọn, một đáp án đúng rõ ràng).
+- Thẻ còn lại theo mức Bloom: Chặng 1 Recall, Chặng 2 Apply, Chặng 3 Synthesize.
+- Câu hỏi ngắn, không lặp ý, đáp án mẫu súc tích. Không dùng câu hỏi từ bất kỳ chủ đề nào khác.
 
 Đầu ra phải là một chuỗi JSON hợp lệ theo đúng cấu trúc sau (không bao bọc trong khối code markdown, không thừa ký tự ngoài JSON):
 {
@@ -1109,35 +1120,37 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
             if (!parsed.id) {
               parsed.id = `rm-${Date.now()}`;
             }
-            openNewRoadmap(parsed);
-            if (parsed.milestones && parsed.milestones.length > 0) {
-              setSelectedMilestoneId(parsed.milestones[0].id);
+            const scopedRoadmap = scopeRoadmapCards(parsed);
+            openNewRoadmap(scopedRoadmap);
+            if (scopedRoadmap.milestones && scopedRoadmap.milestones.length > 0) {
+              setSelectedMilestoneId(scopedRoadmap.milestones[0].id);
             }
             setOcrStatus("done");
+            setOcrStep(3);
 
             // Save to savedRoadmaps list
             setSavedRoadmaps(prev => {
-              const updated = [...prev, parsed];
+              const updated = [...prev, scopedRoadmap];
               localStorage.setItem("saved_roadmaps", JSON.stringify(updated));
               return updated;
             });
 
             // Extract cards and open verification layer popup
-            const extractedCards = parsed.milestones.flatMap((m: any) => m.cards || []);
+            const extractedCards = scopedRoadmap.milestones.flatMap((m: any) => m.cards || []);
             setVerificationCards(JSON.parse(JSON.stringify(extractedCards)));
             setIsVerificationModalOpen(true);
           } catch(e) {
             console.error("Failed to parse Gemini Roadmap JSON response", e, res);
-            runOfflineMock();
+            createLocalDraft();
           }
         }).catch(err => {
           console.error(err);
-          alert(`Lỗi API thực tế: ${err.message}. Hệ thống chuyển đổi sang mô phỏng Lộ trình mẫu.`);
-          runOfflineMock();
+          alert(`Lỗi API thực tế: ${err.message}. Đã lưu một khung lộ trình trống từ tài liệu của bạn; hãy thử tạo lại khi kết nối AI ổn định.`);
+          createLocalDraft();
         });
       }, 2000);
     } else {
-      runOfflineMock();
+      createLocalDraft();
     }
   };
 
@@ -1222,8 +1235,15 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
   const handleDeleteRoadmap = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const updated = savedRoadmaps.filter(r => r.id !== id);
-    setSavedRoadmaps(updated);
-    localStorage.setItem("saved_roadmaps", JSON.stringify(updated));
+    saveRoadmapsState(updated);
+    const remainingCards = cards.filter(card => card.roadmapId !== id);
+    saveCardsState(remainingCards);
+    setFilteredQueue(queue => queue.filter(card => card.roadmapId !== id));
+    if (activePracticeRoadmapId === id) {
+      setActivePracticeRoadmapId(null);
+      setCurrentQueueIndex(0);
+    }
+    recordLearningEvent("roadmap_deleted", { roadmapId: id });
     if (activeRoadmap?.id === id) {
       setActiveRoadmap(null);
       setOcrStatus("idle");
@@ -1256,7 +1276,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
     }));
 
     // Filter duplicates based on question content
-    const duplicatesRemoved = cleanCardsToAdd.filter(cAdd => !cards.some(c => c.question.trim() === cAdd.question.trim()));
+    const duplicatesRemoved = cleanCardsToAdd.filter(cAdd => !cards.some(c => c.id === cAdd.id));
     if (duplicatesRemoved.length === 0) {
       alert("Tất cả các thẻ này đã tồn tại trong Leitner!");
       setIsVerificationModalOpen(false);
@@ -1338,10 +1358,15 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
     setFilterBloom({ green: true, yellow: true, red: true });
     setFilterBox({ box1: true, box2: true, box3: true });
 
-    let list = cards.filter(card => card.subjectId === activeSubject);
+    setActiveSubject(targetCard.subjectId);
+    setActivePracticeRoadmapId(targetCard.roadmapId || null);
+    let list = cards.filter(card =>
+      card.subjectId === targetCard.subjectId &&
+      (!targetCard.roadmapId || card.roadmapId === targetCard.roadmapId)
+    );
     setFilteredQueue(list);
     
-    const cardIdx = list.findIndex(c => c.question.trim() === targetCard.question.trim());
+    const cardIdx = list.findIndex(c => c.id === targetCard.id);
     if (cardIdx !== -1) {
       setCurrentQueueIndex(cardIdx);
     } else {
@@ -1580,7 +1605,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                         {savedRoadmaps.map(rm => {
                           let masteredCount = 0;
                           rm.milestones.forEach(m => {
-                            const cardInDeck = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+                            const cardInDeck = cards.find(c => m.cards.some(mc => mc.id === c.id));
                             if (cardInDeck && cardInDeck.box === 3) masteredCount++;
                           });
                           const progress = Math.round((masteredCount / 3) * 100);
@@ -2110,17 +2135,6 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                     </div>
                   )}
 
-                  <div className="ocr-simulator-presets" style={{ marginTop: "1.5rem", borderTop: "2px dashed #2d3748", paddingTop: "1rem" }}>
-                    <label style={{ fontFamily: "'Itim', cursive, sans-serif", fontWeight: 700, color: "#1e3a8a", textTransform: "uppercase", fontSize: "0.85rem", marginBottom: "0.5rem", display: "block" }}>Tài liệu mẫu học tập:</label>
-                    <div className="preset-buttons" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      <button className={`notebook-btn notebook-btn-secondary ${ocrPresetsSel === "chemistry-este" ? "active" : ""}`} onClick={() => { handlePresetSelect("chemistry-este"); setOcrInputType('file'); }} style={{ fontSize: "0.95rem", justifyContent: "flex-start", width: "100%" }}>
-                        📝 Đề cương Este - Lipit (PDF)
-                      </button>
-                      <button className={`notebook-btn notebook-btn-secondary ${ocrPresetsSel === "physics-wave" ? "active" : ""}`} onClick={() => { handlePresetSelect("physics-wave"); setOcrInputType('file'); }} style={{ fontSize: "0.95rem", justifyContent: "flex-start", width: "100%" }}>
-                        📝 Chuyên đề Sóng cơ học (DOCX)
-                      </button>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="ocr-results notebook-paper" style={{ minHeight: "520px" }}>
@@ -2221,6 +2235,9 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                         </div>
                         <div className={`step-line ${ocrStep >= 2 ? (ocrStep > 2 ? "completed" : "active") : ""}`} style={{ color: ocrStep > 2 ? "#10b981" : ocrStep === 2 ? "#3b82f6" : "#6b7280" }}>
                           <i className="fa-solid fa-spinner fa-spin"></i> 🗺️ Tạo chặng & Thẻ Leitner Bloom...
+                        </div>
+                        <div className={`step-line ${ocrStep >= 3 ? "completed" : ""}`} style={{ color: ocrStep >= 3 ? "#10b981" : "#6b7280" }}>
+                          <i className={`fa-solid ${ocrStep >= 3 ? "fa-check-circle" : "fa-clock"}`}></i> 🧩 Kiểm tra quiz và lưu vào thư viện cá nhân...
                         </div>
                       </div>
                     </div>
@@ -2373,7 +2390,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                 const getRoadmapProgress = (rm: LearningRoadmap) => {
                   let masteredCount = 0;
                   rm.milestones.forEach(m => {
-                    const cardInDeck = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+                    const cardInDeck = cards.find(c => m.cards.some(mc => mc.id === c.id));
                     if (cardInDeck && cardInDeck.box === 3) {
                       masteredCount++;
                     }
@@ -2487,7 +2504,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                               const toMilestone = activeMap.milestones[1]; // ms2
                               const currentLinkFrom = link.from === "ms1" ? fromMilestone : toMilestone;
                               
-                              const fromCard = cards.find(c => currentLinkFrom?.cards.some(mc => mc.question.trim() === c.question.trim()));
+                              const fromCard = cards.find(c => currentLinkFrom?.cards.some(mc => mc.id === c.id));
                               const activePath = fromCard && fromCard.box === 3;
 
                               return (
@@ -2509,14 +2526,14 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                             const pos = getCustomMapNodesCoords()[idx];
                             if (!pos) return null;
 
-                            const currentCard = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+                            const currentCard = cards.find(c => m.cards.some(mc => mc.id === c.id));
                             
                             let state: "locked" | "active" | "mastered" | "red-ready" = "locked";
                             
                             let prereqMastered = true;
                             if (idx > 0) {
                               const prevMilestone = activeMap.milestones[idx - 1];
-                              const prevCard = cards.find(c => prevMilestone?.cards.some(mc => mc.question.trim() === c.question.trim()));
+                              const prevCard = cards.find(c => prevMilestone?.cards.some(mc => mc.id === c.id));
                               prereqMastered = prevCard !== undefined && prevCard.box === 3;
                             }
 
@@ -2570,7 +2587,7 @@ Tạo ra 1 câu hỏi kiểm tra (Retrieval Card) ứng với mỗi chặng:
                           const m = activeMap.milestones.find(x => x.id === selectedMapNodeId);
                           if (!m) return null;
 
-                          const currentCard = cards.find(c => m.cards.some(mc => mc.question.trim() === c.question.trim()));
+                          const currentCard = cards.find(c => m.cards.some(mc => mc.id === c.id));
 
                           return (
                             <div className="node-detail-sidebar" style={{ top: "10px", right: "10px", height: "calc(100% - 20px)" }}>
