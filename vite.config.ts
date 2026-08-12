@@ -7,7 +7,7 @@ function nvidiaGateway(key: string): Plugin {
   return { name: 'nvidia-gateway', configureServer(server) { server.middlewares.use('/api/nvidia', (req, res, next) => {
     if (req.method !== 'POST') return next(); const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => chunks.push(chunk)); req.on('end', async () => { try {
-      const upstream = await fetch(`https://integrate.api.nvidia.com${req.url || ''}`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: Buffer.concat(chunks) });
+      const upstream = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: Buffer.concat(chunks) });
       res.statusCode = upstream.status; res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json'); res.end(await upstream.text());
     } catch (error) { res.statusCode = 502; res.end(JSON.stringify({ error: { message: error instanceof Error ? error.message : 'NVIDIA gateway error' } })); } });
   }) } }

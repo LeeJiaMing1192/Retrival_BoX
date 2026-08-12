@@ -590,7 +590,7 @@ export default function App() {
   // --- GEMINI API INTEGRATIONS ---
   const callGemini = async (prompt: string, sysPrompt: string = "") => {
     if (!geminiApiKey) throw new Error("API Key chưa được thiết lập.");
-    const url = "/api/nvidia/v1/chat/completions";
+    const url = "/api/nvidia";
     const body: any = { model: "nvidia/nemotron-3-super-120b-a12b", temperature: 0.7, max_tokens: 4096, messages: [{ role: "system", content: sysPrompt || "Bạn là gia sư học tập hữu ích." }, { role: "user", content: prompt }] };
 
     const response = await fetch(url, {
@@ -609,7 +609,7 @@ export default function App() {
 
   // Free-response grading has its own NVIDIA model so it can focus on feedback quality.
   const callGemmaGrader = async (prompt: string, sysPrompt: string = "") => {
-    const response = await fetch("/api/nvidia/v1/chat/completions", {
+    const response = await fetch("/api/nvidia", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({
