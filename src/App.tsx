@@ -270,7 +270,6 @@ export default function App() {
   const [ocrFileSize, setOcrFileSize] = useState<string>("840 KB");
   const [ocrStatus, setOcrStatus] = useState<'idle' | 'scanning' | 'done'>('idle');
   const [ocrStep, setOcrStep] = useState<number>(0);
-  const [ocrPresetsSel] = useState<string>("chemistry-este");
   const [ocrPreviewSrc, setOcrPreviewSrc] = useState<string>("https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?auto=format&fit=crop&w=500&q=80");
   
   // OCR Input Type, Verification Modal, Praise Modal & Hint state additions
@@ -530,6 +529,9 @@ export default function App() {
 
   // --- RECALCULATE DETAILED QUEUE IN STUDY VIEWS ---
   useEffect(() => {
+    // A roadmap practice session owns its queue until the learner finishes it.
+    // Do not replace it with the global subject queue after every answer.
+    if (activePracticeRoadmapId && forcePracticeAll) return;
     rebuildStudyQueue();
   }, [cards, activeSubject, activePracticeRoadmapId, filterChapter, filterBloom, filterBox, forcePracticeAll, mood, triggerBurnout, isCompressed]);
 
@@ -835,6 +837,7 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
     });
 
     saveCardsState(updated);
+    setFilteredQueue(queue => queue.map(card => updated.find(nextCard => nextCard.id === card.id) || card));
     recordLearningEvent("card_reviewed", { cardId: activeCard.id, grade, box: newBox, timeTaken: secondsElapsed });
 
     // Points addition
@@ -963,6 +966,17 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
   const triggerOCRScan = () => {
     setOcrStatus("scanning");
     setOcrStep(1);
+    const isTextSource = ocrInputType === "text" || activeOCRMimeType === "text/plain";
+    const currentSource = (isTextSource ? (ocrInputType === "text" ? ocrTextContent : activeOCRBase64) : activeOCRBase64).trim();
+    const selectedSubject = documentTags.find(tag => ["Hóa học", "Vật lý", "Toán học"].includes(tag)) || "Môn học chưa xác định";
+    const subjectId = selectedSubject === "Vật lý" ? "physics" : selectedSubject === "Hóa học" ? "chemistry" : `custom-${selectedSubject.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    const chapterId = subjectId === "physics" ? "p1" : subjectId === "chemistry" ? "c1" : "general";
+
+    if (!currentSource) {
+      setOcrStatus("idle");
+      alert("Hãy nhập hoặc tải tài liệu trước khi tạo lộ trình.");
+      return;
+    }
 
     const createLocalDraft = () => {
       setTimeout(() => setOcrStep(2), 1200);
@@ -1000,15 +1014,11 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
     };
 
     if (geminiApiKey) {
-      const presetSubject = ocrPresetsSel.includes("chemistry") ? "Hóa học 12" : "Vật lý 12";
-      let prompt = `Bạn nhận được nội dung tài liệu học tập của học sinh. Môn học: ${presetSubject}.`;
-      if (activeOCRBase64 && activeOCRMimeType === "text/plain") {
-        prompt += `\nNội dung văn bản trích xuất từ tài liệu (chỉ dùng đúng nội dung này, không trộn kiến thức từ tài liệu khác):\n"${activeOCRBase64.slice(0, 12000)}"`;
-      } else if (!activeOCRBase64) {
-        const desc = ocrPresetsSel === "chemistry-este" ? 
-          "Đề cương Chuyên đề Este - Lipit (khái niệm este, phản ứng este hóa, vinyl axetat, xà phòng hóa lipid, glixerol, este hữu cơ phức tạp)" : 
-          "Bài giảng Sóng cơ học và Sóng âm (khái niệm sóng cơ, sóng dọc, sóng ngang, chu kỳ dao động, tốc độ truyền sóng, bước sóng, giao thoa sóng, cộng hưởng sáo trúc)";
-        prompt += `\nNội dung tài liệu ôn tập: "${desc}"`;
+      let prompt = `Bạn nhận được đúng MỘT tài liệu học tập của học sinh. Môn học do học sinh chọn: ${selectedSubject}. Tags/mục tiêu: ${documentTags.join(", ") || "không có"}.`;
+      if (isTextSource) {
+        prompt += `\n\nNỘI DUNG DUY NHẤT ĐƯỢC PHÉP DÙNG:\n---\n${currentSource.slice(0, 12000)}\n---\nKhông được dùng kiến thức, câu hỏi, hay tên bài từ các tài liệu trước, đặc biệt không tự thêm Este–Lipit, Sóng cơ, Hóa học hoặc Vật lý nếu chúng không xuất hiện trong nội dung trên.`;
+      } else {
+        prompt += `\n\nHãy chỉ dùng nội dung nhìn thấy trong tệp đính kèm. Không sử dụng ví dụ, lộ trình hoặc tài liệu mẫu cũ.`;
       }
 
       prompt += `\n\nNhiệm vụ của bạn là hãy phân tích tài liệu này và thiết lập một Lộ trình học tập cá nhân hóa (Learning Roadmap) gồm đúng 3 chặng học tập (Milestones) sắp xếp theo mức độ nhận thức tăng dần của Bloom's Taxonomy.
@@ -1032,8 +1042,8 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
       "cards": [
         {
           "id": "card-ms1-${Date.now()}",
-          "subjectId": "${ocrPresetsSel.includes("chemistry") ? "chemistry" : "physics"}",
-          "chapterId": "${ocrPresetsSel.includes("chemistry") ? "c1" : "p2"}",
+          "subjectId": "${subjectId}",
+          "chapterId": "${chapterId}",
           "type": "green",
           "question": "Câu hỏi trắc nghiệm chặng 1",
           "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
@@ -1052,8 +1062,8 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
       "cards": [
         {
           "id": "card-ms2-${Date.now()}",
-          "subjectId": "${ocrPresetsSel.includes("chemistry") ? "chemistry" : "physics"}",
-          "chapterId": "${ocrPresetsSel.includes("chemistry") ? "c1" : "p2"}",
+          "subjectId": "${subjectId}",
+          "chapterId": "${chapterId}",
           "type": "yellow",
           "question": "Câu hỏi tự luận vận dụng ngắn chặng 2",
           "options": null,
@@ -1072,8 +1082,8 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
       "cards": [
         {
           "id": "card-ms3-${Date.now()}",
-          "subjectId": "${ocrPresetsSel.includes("chemistry") ? "chemistry" : "physics"}",
-          "chapterId": "${ocrPresetsSel.includes("chemistry") ? "c1" : "p2"}",
+          "subjectId": "${subjectId}",
+          "chapterId": "${chapterId}",
           "type": "red",
           "question": "Câu hỏi tự luận tổng hợp liên chương chặng 3",
           "options": null,
@@ -1352,21 +1362,31 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
   };
 
   // --- KNOWLEDGE MAP CONFIGS ---
-  const handleStartCardPractice = (targetCard: Card) => {
+  const handleStartRoadmapPractice = (roadmapId: string, preferredCardId?: string) => {
     setForcePracticeAll(true);
     setFilterChapter("all");
     setFilterBloom({ green: true, yellow: true, red: true });
     setFilterBox({ box1: true, box2: true, box3: true });
 
-    setActiveSubject(targetCard.subjectId);
-    setActivePracticeRoadmapId(targetCard.roadmapId || null);
-    let list = cards.filter(card =>
-      card.subjectId === targetCard.subjectId &&
-      (!targetCard.roadmapId || card.roadmapId === targetCard.roadmapId)
-    );
+    const list = cards
+      .filter(card => card.roadmapId === roadmapId)
+      .sort((a, b) => {
+        // New and overdue cards come first; then keep the roadmap's own stable sequence.
+        const aPriority = a.history.length === 0 ? 0 : (!a.nextReviewDate || new Date(a.nextReviewDate).getTime() <= Date.now() ? 1 : 2);
+        const bPriority = b.history.length === 0 ? 0 : (!b.nextReviewDate || new Date(b.nextReviewDate).getTime() <= Date.now() ? 1 : 2);
+        return aPriority - bPriority;
+      });
+
+    if (list.length === 0) {
+      alert("Lộ trình này chưa có thẻ đã lưu. Hãy xác nhận thẻ trong bước Kiểm duyệt trước.");
+      return;
+    }
+
+    setActiveSubject(list[0].subjectId);
+    setActivePracticeRoadmapId(roadmapId);
     setFilteredQueue(list);
     
-    const cardIdx = list.findIndex(c => c.id === targetCard.id);
+    const cardIdx = preferredCardId ? list.findIndex(c => c.id === preferredCardId) : 0;
     if (cardIdx !== -1) {
       setCurrentQueueIndex(cardIdx);
     } else {
@@ -1374,7 +1394,17 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
     }
     
     setFlipped(false);
+    setEssayAnswer("");
+    setSelectedGreenOption(null);
     setActiveTab("retrieval");
+  };
+
+  const handleStartCardPractice = (targetCard: Card) => {
+    if (!targetCard.roadmapId) {
+      alert("Thẻ này không thuộc một lộ trình đã lưu.");
+      return;
+    }
+    handleStartRoadmapPractice(targetCard.roadmapId, targetCard.id);
   };
 
   return (
@@ -2329,11 +2359,7 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
                                   <i className="fa-solid fa-bolt"></i> Kích hoạt chặng này (+30 XP)
                                 </button>
                               ) : (
-                                <button className="notebook-btn notebook-btn-secondary" onClick={() => {
-                                  setActiveTab("retrieval");
-                                  setFilterChapter(m.cards[0]?.chapterId || "all");
-                                  setForcePracticeAll(true);
-                                }} style={{ width: "100%" }}>
+                                <button className="notebook-btn notebook-btn-secondary" onClick={() => handleStartRoadmapPractice(activeRoadmap.id, m.cards[0]?.id)} style={{ width: "100%" }}>
                                   <i className="fa-solid fa-play"></i> Bắt đầu ôn tập trong Leitner
                                 </button>
                               )}
@@ -2472,7 +2498,10 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
                     <div className="map-main-pane">
                       <div className="panel-header" style={{ padding: "0.5rem 1rem", border: "2px solid #2d3748", borderRadius: "12px", backgroundColor: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <h4 style={{ fontWeight: 800, color: "#1e3a8a", margin: 0 }}>Sơ đồ liên kết: {activeMap.topicName}</h4>
-                        <div className="map-legend" style={{ display: "flex", gap: "1rem", fontSize: "0.85rem" }}>
+                        <div className="map-legend" style={{ display: "flex", gap: "1rem", fontSize: "0.85rem", alignItems: "center" }}>
+                          <button className="notebook-btn notebook-btn-success" onClick={() => handleStartRoadmapPractice(activeMap.id)} style={{ padding: "0.4rem 0.7rem", fontSize: "0.8rem" }}>
+                            <i className="fa-solid fa-play"></i> Học lộ trình này
+                          </button>
                           <span className="legend-item"><span className="legend-dot bg-gray"></span> Chưa mở</span>
                           <span className="legend-item"><span className="legend-dot bg-orange"></span> Đang học</span>
                           <span className="legend-item"><span className="legend-dot bg-green"></span> Đã vững</span>
