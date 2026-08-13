@@ -279,6 +279,8 @@ export default function App() {
   const [customSubject, setCustomSubject] = useState<string>("");
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState<boolean>(false);
   const [verificationCards, setVerificationCards] = useState<Card[]>([]);
+  const [verificationRoadmapTitle, setVerificationRoadmapTitle] = useState<string>("");
+  const [verificationSubjectId, setVerificationSubjectId] = useState<string>("chemistry");
   const [showHint, setShowHint] = useState<boolean>(false);
   const [showPraiseModal, setShowPraiseModal] = useState<boolean>(false);
   const [praiseTimeSpent, setPraiseTimeSpent] = useState<number>(0);
@@ -397,6 +399,13 @@ export default function App() {
     setActiveTab("knowledge-map");
     recordLearningEvent("roadmap_created", { roadmapId: roadmap.id, topicName: roadmap.topicName });
     window.setTimeout(() => setNewlyCreatedMapId(""), 5000);
+  };
+
+  const openVerification = (roadmap: LearningRoadmap) => {
+    setVerificationRoadmapTitle(roadmap.topicName);
+    setVerificationSubjectId(roadmap.milestones.flatMap(milestone => milestone.cards)[0]?.subjectId || "chemistry");
+    setVerificationCards(JSON.parse(JSON.stringify(roadmap.milestones.flatMap(milestone => milestone.cards))));
+    setIsVerificationModalOpen(true);
   };
 
   const scopeRoadmapCards = (roadmap: LearningRoadmap): LearningRoadmap => ({
@@ -633,33 +642,6 @@ export default function App() {
     return data.choices?.[0]?.message?.content || "";
   };
 
-  // Free-response grading has its own NVIDIA model so it can focus on feedback quality.
-  const callGemmaGrader = async (prompt: string, sysPrompt: string = "") => {
-    const response = await fetch("/api/nvidia", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemma-4-31b-it",
-        messages: [
-          ...(sysPrompt ? [{ role: "system", content: sysPrompt }] : []),
-          { role: "user", content: prompt }
-        ],
-        chat_template_kwargs: { enable_thinking: true },
-        max_tokens: 16384,
-        stream: false,
-        temperature: 1,
-        top_p: 0.95
-      })
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `HTTP ${response.status}`);
-    }
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "";
-  };
-
   const callGeminiMultimodal = async (prompt: string, base64: string, mime: string, sysPrompt: string = "") => {
     if (!geminiApiKey) throw new Error("API Key chưa được thiết lập.");
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
@@ -748,8 +730,7 @@ Nhiệm vụ của bạn là hãy đóng vai trò là một Gia sư AI chấm b�
 Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) bằng tiếng Việt cho học sinh.
 Đánh giá độ chính xác (ví dụ đúng khoảng bao nhiêu phần trăm, có ghi được các ý/công thức cốt lõi hay không), chỉ ra lỗi sai kiến thức hoặc hiểu lầm (nếu có), và cung cấp 1 mẹo học tập hoặc định hướng nhanh để cải thiện trí nhớ. Hãy trả lời cực kỳ súc tích, thân thiện và động viên học sinh.`;
 
-      const grader = activeCard.type === "green" ? callGemini : callGemmaGrader;
-      grader(prompt, "Bạn là Gia sư AI chấm bài cho học sinh THPT Hóa học 12 và Vật lý 12.")
+      callGemini(prompt, "Bạn là Gia sư AI chấm bài cho học sinh. Chỉ trả về phản hồi chấm bài ngắn gọn bằng tiếng Việt, không thêm lời dẫn kỹ thuật.")
         .then(res => {
           setTutorCardFeedback(res);
         })
@@ -1007,9 +988,7 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
         });
 
         // Extract cards and open verification layer popup
-        const extractedCards = clonedRoadmap.milestones.flatMap((m: any) => m.cards || []);
-        setVerificationCards(JSON.parse(JSON.stringify(extractedCards)));
-        setIsVerificationModalOpen(true);
+        openVerification(clonedRoadmap);
       }, 3600);
     };
 
@@ -1146,9 +1125,7 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
             });
 
             // Extract cards and open verification layer popup
-            const extractedCards = scopedRoadmap.milestones.flatMap((m: any) => m.cards || []);
-            setVerificationCards(JSON.parse(JSON.stringify(extractedCards)));
-            setIsVerificationModalOpen(true);
+            openVerification(scopedRoadmap);
           } catch(e) {
             console.error("Failed to parse Gemini Roadmap JSON response", e, res);
             createLocalDraft();
@@ -1275,6 +1252,12 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
     }));
   };
 
+  const applyVerificationSubject = (subjectId: string) => {
+    const chapterId = subjectId === "physics" ? "p1" : "c1";
+    setVerificationSubjectId(subjectId);
+    setVerificationCards(prev => prev.map(card => ({ ...card, subjectId, chapterId })));
+  };
+
   const handleConfirmVerification = (editedCards: Card[]) => {
     const cleanCardsToAdd = editedCards.map(c => ({
       ...c,
@@ -1299,9 +1282,14 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
     // Update activeRoadmap milestones to completed
     if (activeRoadmap) {
       const completedMilestones = activeRoadmap.milestones.map(m => ({ ...m, status: "completed" as const }));
+      const cardById = new Map(cleanCardsToAdd.map(card => [card.id, card]));
       const completedRoadmap = {
         ...activeRoadmap,
-        milestones: completedMilestones
+        topicName: verificationRoadmapTitle.trim() || activeRoadmap.topicName,
+        milestones: completedMilestones.map(milestone => ({
+          ...milestone,
+          cards: milestone.cards.map(card => cardById.get(card.id) || card)
+        }))
       };
       setActiveRoadmap(completedRoadmap);
       saveRoadmapsState(savedRoadmaps.map(roadmap => roadmap.id === completedRoadmap.id ? completedRoadmap : roadmap));
@@ -2369,7 +2357,7 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
                       })()}
 
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
-                        <button className="notebook-btn" onClick={() => setIsVerificationModalOpen(true)} style={{ width: "100%", backgroundColor: "#fbbf24", color: "#2d3748" }}>
+                        <button className="notebook-btn" onClick={() => activeRoadmap && openVerification(activeRoadmap)} style={{ width: "100%", backgroundColor: "#fbbf24", color: "#2d3748" }}>
                           <i className="fa-solid fa-check-double"></i> 🔍 Duyệt & Xác nhận Thẻ (Verification Layer)
                         </button>
                         <button className="notebook-btn notebook-btn-success" onClick={handleApproveOCR} style={{ width: "100%" }}>
@@ -2994,6 +2982,20 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
                 AI đã trích xuất <b>{verificationCards.length} thẻ lý thuyết/bài tập</b>. Bạn hãy kiểm tra lại nội dung, phân loại môn học, chương mục (retagging) trước khi lưu trữ chính thức vào hệ thống Leitner.
               </p>
               
+              <div className="verification-grid-2" style={{ padding: "1rem", border: "2px dashed #c99439", borderRadius: "12px", background: "rgba(255, 244, 205, .7)" }}>
+                <div className="verification-field-group">
+                  <label>Tên / chủ đề lộ trình:</label>
+                  <input className="verification-input" value={verificationRoadmapTitle} onChange={(e) => setVerificationRoadmapTitle(e.target.value)} placeholder="Ví dụ: Hàm số bậc hai" />
+                </div>
+                <div className="verification-field-group">
+                  <label>Áp dụng môn học cho tất cả thẻ:</label>
+                  <select className="verification-input" value={verificationSubjectId} onChange={(e) => applyVerificationSubject(e.target.value)}>
+                    <option value="chemistry">Hóa học</option>
+                    <option value="physics">Vật lý</option>
+                  </select>
+                </div>
+              </div>
+
               {verificationCards.map((card, cIdx) => {
                 const currentSubject = card.subjectId;
                 const subjectChapters = INITIAL_SUBJECTS[currentSubject]?.chapters || [];
