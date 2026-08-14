@@ -2,8 +2,6 @@
  * Vercel production endpoint for all NVIDIA model calls.
  * Set NVIDIA_API_KEY in Vercel Project Settings → Environment Variables.
  */
-export const config = { maxDuration: 60 };
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");

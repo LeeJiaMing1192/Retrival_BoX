@@ -270,6 +270,7 @@ export default function App() {
   const [ocrFileSize, setOcrFileSize] = useState<string>("840 KB");
   const [ocrStatus, setOcrStatus] = useState<'idle' | 'scanning' | 'done'>('idle');
   const [ocrStep, setOcrStep] = useState<number>(0);
+  const [generationProgress, setGenerationProgress] = useState<number>(0);
   const [ocrPreviewSrc, setOcrPreviewSrc] = useState<string>("https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?auto=format&fit=crop&w=500&q=80");
   
   // OCR Input Type, Verification Modal, Praise Modal & Hint state additions
@@ -453,6 +454,18 @@ export default function App() {
       setActiveMapId(savedRoadmaps[0].id);
     }
   }, [savedRoadmaps, activeMapId]);
+
+  useEffect(() => {
+    if (ocrStatus !== "scanning") return;
+    const timer = window.setInterval(() => {
+      setGenerationProgress(progress => {
+        if (progress < 60) return Math.min(60, progress + 6);
+        if (progress < 85) return Math.min(85, progress + 2);
+        return Math.min(95, progress + 0.5);
+      });
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [ocrStatus]);
 
   // --- RECALCULATE DUE QUEUE & DISTRIBUTION ---
   const now = new Date().getTime();
@@ -947,6 +960,7 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
   const triggerOCRScan = () => {
     setOcrStatus("scanning");
     setOcrStep(1);
+    setGenerationProgress(8);
     const isTextSource = ocrInputType === "text" || activeOCRMimeType === "text/plain";
     const currentSource = (isTextSource ? (ocrInputType === "text" ? ocrTextContent : activeOCRBase64) : activeOCRBase64).trim();
     const selectedSubject = documentTags.find(tag => ["Hóa học", "Vật lý", "Toán học"].includes(tag)) || "Môn học chưa xác định";
@@ -964,6 +978,7 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
       setTimeout(() => setOcrStep(3), 2400);
       setTimeout(() => {
         setOcrStatus("done");
+        setGenerationProgress(100);
         const firstDocumentLine = ocrTextContent.split("\n").map(line => line.trim()).find(Boolean);
         const clonedRoadmap = scopeRoadmapCards({
           id: `rm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1110,6 +1125,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
               setSelectedMilestoneId(scopedRoadmap.milestones[0].id);
             }
             setOcrStatus("done");
+            setGenerationProgress(100);
             setOcrStep(3);
 
             // Save to savedRoadmaps list
@@ -2241,6 +2257,16 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                     <div className="ocr-loading-view" style={{ color: "#2d3748" }}>
                       <div className="ai-processing-spinner" style={{ borderTopColor: "#1e3a8a", borderLeftColor: "#1e3a8a" }}></div>
                       <h4 style={{ fontWeight: 700 }}>AI đang thiết lập chặng lộ trình...</h4>
+                      <div style={{ width: "100%", maxWidth: "430px", margin: "0.75rem auto 0", textAlign: "left" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.35rem" }}>
+                          <span>{generationProgress < 60 ? "Đang đọc tài liệu" : generationProgress < 90 ? "Đang tạo roadmap và quiz" : "Đang hoàn tất JSON"}</span>
+                          <span>{Math.round(generationProgress)}%</span>
+                        </div>
+                        <div style={{ height: "12px", border: "2px solid #2d3748", borderRadius: "999px", overflow: "hidden", background: "#f8ebc9" }}>
+                          <div style={{ height: "100%", width: `${generationProgress}%`, background: "linear-gradient(90deg, #d49a42, #7e9d72)", transition: "width 1.1s ease" }} />
+                        </div>
+                        <p style={{ margin: "0.45rem 0 0", fontSize: "0.8rem", color: "#5b5849" }}>Tác vụ dài có thể mất vài phút; bạn có thể để trang này mở trong lúc AI xử lý.</p>
+                      </div>
                       <div className="bloom-steps" style={{ marginTop: "1rem", color: "#2d3748" }}>
                         <div className={`step-line ${ocrStep >= 1 ? (ocrStep > 1 ? "completed" : "active") : ""}`} style={{ color: ocrStep > 1 ? "#10b981" : ocrStep === 1 ? "#3b82f6" : "#6b7280" }}>
                           <i className={`fa-solid ${ocrStep > 1 ? "fa-check-circle" : "fa-spinner fa-spin"}`}></i> 📂 Trích xuất dữ liệu tài liệu...
