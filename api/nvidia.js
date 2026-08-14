@@ -26,10 +26,19 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify(req.body)
     });
+    res.status(upstream.status);
+    const contentType = upstream.headers.get("content-type") || "application/json";
+    res.setHeader("Content-Type", contentType);
+
+    if (req.body?.stream && upstream.body) {
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      for await (const chunk of upstream.body) res.write(chunk);
+      return res.end();
+    }
+
     const responseText = await upstream.text();
     console.log(`[${requestId}] NVIDIA response`, { status: upstream.status, bytes: responseText.length });
-    res.status(upstream.status);
-    res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
     return res.send(responseText);
   } catch (error) {
     console.error(`[${requestId}] NVIDIA request failed`, error);

@@ -462,18 +462,6 @@ export default function App() {
     }
   }, [savedRoadmaps, activeMapId]);
 
-  useEffect(() => {
-    if (ocrStatus !== "scanning") return;
-    const timer = window.setInterval(() => {
-      setGenerationProgress(progress => {
-        if (progress < 60) return Math.min(60, progress + 6);
-        if (progress < 85) return Math.min(85, progress + 2);
-        return Math.min(95, progress + 0.5);
-      });
-    }, 1200);
-    return () => window.clearInterval(timer);
-  }, [ocrStatus]);
-
   // --- RECALCULATE DUE QUEUE & DISTRIBUTION ---
   const now = new Date().getTime();
   
@@ -660,6 +648,61 @@ export default function App() {
     }
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "";
+  };
+
+  const streamRoadmapGeneration = async (prompt: string, onContent: (content: string) => void) => {
+    const response = await fetch("/api/nvidia", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({
+        model: "nvidia/nemotron-3-super-120b-a12b",
+        temperature: 0.2,
+        max_tokens: 10000,
+        stream: true,
+        chat_template_kwargs: { enable_thinking: false },
+        messages: [
+          { role: "system", content: "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT. Trả về JSON hợp lệ duy nhất, thật ngắn gọn và luôn hoàn tất toàn bộ JSON trước khi dừng." },
+          { role: "user", content: prompt }
+        ]
+      })
+    });
+
+    if (!response.ok || !response.body) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let content = "";
+
+    const consume = (line: string) => {
+      if (!line.startsWith("data:")) return;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") return;
+      try {
+        const event = JSON.parse(payload);
+        const delta = event.choices?.[0]?.delta?.content || "";
+        if (delta) {
+          content += delta;
+          onContent(content);
+        }
+      } catch {
+        // Ignore non-JSON keepalive frames from the streaming endpoint.
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      pending += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() || "";
+      lines.forEach(consume);
+      if (done) break;
+    }
+    if (pending) consume(pending);
+    return content;
   };
 
   const callGeminiMultimodal = async (prompt: string, base64: string, mime: string, sysPrompt: string = "") => {
@@ -1104,7 +1147,12 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
       if (activeOCRBase64 && activeOCRMimeType !== "text/plain") {
         apiCall = callGeminiMultimodal(prompt, activeOCRBase64, activeOCRMimeType, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT.");
       } else {
-        apiCall = callGemini(prompt, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT. Trả về JSON hợp lệ duy nhất, thật ngắn gọn và luôn hoàn tất toàn bộ JSON trước khi dừng.", 10000);
+        setGenerationProgress(20);
+        apiCall = streamRoadmapGeneration(prompt, (content) => {
+          setOcrStep(3);
+          // This advances only when real streamed model content arrives.
+          setGenerationProgress(Math.min(95, 20 + Math.floor(content.length / 28)));
+        });
       }
 
       apiCall.then(res => {
