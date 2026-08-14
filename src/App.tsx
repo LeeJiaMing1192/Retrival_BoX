@@ -3013,6 +3013,33 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
         </div>
       )}
 
+      {/* Generation journey: opens immediately after the learner starts AI roadmap creation. */}
+      {ocrStatus === "scanning" && (
+        <div className="verification-modal-overlay" style={{ zIndex: 1400, backdropFilter: "blur(7px)", background: "rgba(47, 58, 47, .54)" }}>
+          <div className="verification-modal-content" style={{ maxWidth: "650px", textAlign: "center", overflow: "hidden", background: "#f8ebc9" }}>
+            <div style={{ padding: "1.75rem 1.5rem", background: "linear-gradient(135deg, #d7c27b, #e9d493)", borderBottom: "3px solid #718a68" }}>
+              <span style={{ display: "inline-flex", width: "56px", height: "56px", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: "#f8efcf", border: "3px solid #526a50", color: "#a9664b", fontSize: "1.4rem", boxShadow: "4px 4px 0 rgba(60,78,55,.22)" }}><i className="fa-solid fa-wand-magic-sparkles"></i></span>
+              <h2 style={{ margin: "0.8rem 0 0.3rem", color: "#37453c", fontSize: "1.5rem" }}>AI đang xây lộ trình của bạn</h2>
+              <p style={{ margin: 0, color: "#53604c" }}>Thư mục đang chọn: <b>{selectedDocumentSubject}</b></p>
+            </div>
+            <div style={{ padding: "1.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", margin: "0 auto 1.2rem", maxWidth: "440px" }}>
+                {["Tài liệu", "Lộ trình", "Quiz"].map((label, index) => {
+                  const completed = generationProgress >= [30, 65, 95][index];
+                  const active = !completed && generationProgress >= [0, 30, 65][index];
+                  return <React.Fragment key={label}><div style={{ display: "grid", placeItems: "center", gap: "0.25rem", minWidth: "76px", color: completed || active ? "#3f5b45" : "#8c896e" }}><span style={{ display: "grid", placeItems: "center", width: "32px", height: "32px", borderRadius: "50%", border: "2px solid currentColor", background: active ? "#f8d77e" : completed ? "#cfe0b7" : "#f3e6bf" }}>{completed ? <i className="fa-solid fa-check"></i> : index + 1}</span><b style={{ fontSize: "0.77rem" }}>{label}</b></div>{index < 2 && <div style={{ flex: 1, height: "3px", background: completed ? "#789a6d" : "#c9bb8c" }} />}</React.Fragment>;
+                })}
+              </div>
+              <div style={{ border: "2px solid #718a68", borderRadius: "12px", padding: "0.8rem", background: "#fff4d7", textAlign: "left" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: "#37453c", marginBottom: "0.45rem" }}><span>{generationProgress < 60 ? "Đang đọc nội dung và mục tiêu" : generationProgress < 90 ? "Đang tạo chặng học và câu hỏi" : "Đang kiểm tra lộ trình"}</span><span>{Math.round(generationProgress)}%</span></div>
+                <div style={{ height: "14px", background: "#e1d2a6", borderRadius: "999px", overflow: "hidden" }}><div style={{ width: `${generationProgress}%`, height: "100%", background: "linear-gradient(90deg,#b97558,#d49a42,#7e9d72)", transition: "width 1s ease" }} /></div>
+              </div>
+              <p style={{ margin: "1rem 0 0", fontSize: "0.85rem", color: "#625f4c" }}>Đừng đóng trang này. Khi hoàn tất, bạn sẽ được mở popup để đặt tên, chọn môn và duyệt thẻ.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3. Verification Layer (Retagging & Edit Popup) */}
       {isVerificationModalOpen && verificationCards.length > 0 && (
         <div className="verification-modal-overlay">
@@ -3044,9 +3071,6 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
               </div>
 
               {verificationCards.map((card, cIdx) => {
-                const currentSubject = card.subjectId;
-                const subjectChapters = INITIAL_SUBJECTS[currentSubject]?.chapters || [];
-
                 return (
                   <div key={cIdx} className="verification-card-edit">
                     <div className="verification-card-edit-content">
@@ -3058,39 +3082,6 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                         </h3>
                         <div style={{ display: "flex", gap: "0.5rem" }}>
                           <span className="notebook-badge" style={{ backgroundColor: "#e0f2fe", color: "#0369a1" }}>Ngăn Leitner: 1</span>
-                        </div>
-                      </div>
-
-                      <div className="verification-grid-2">
-                        {/* Tagging: Subject Selector */}
-                        <div className="verification-field-group">
-                          <label>Môn học (Tag Subject):</label>
-                          <select 
-                            className="verification-input"
-                            value={card.subjectId}
-                            onChange={(e) => {
-                              const newSub = e.target.value;
-                              const defaultCh = newSub === 'chemistry' ? 'c1' : 'p1';
-                              handleUpdateVerificationCard(cIdx, { subjectId: newSub, chapterId: defaultCh });
-                            }}
-                          >
-                            <option value="chemistry">🧪 Hóa học 12</option>
-                            <option value="physics">⚡ Vật lý 12</option>
-                          </select>
-                        </div>
-
-                        {/* Tagging: Chapter Selector */}
-                        <div className="verification-field-group">
-                          <label>Chương mục (Tag Chapter):</label>
-                          <select 
-                            className="verification-input"
-                            value={card.chapterId}
-                            onChange={(e) => handleUpdateVerificationCard(cIdx, { chapterId: e.target.value })}
-                          >
-                            {subjectChapters.map(ch => (
-                              <option key={ch.id} value={ch.id}>{ch.name}</option>
-                            ))}
-                          </select>
                         </div>
                       </div>
 
