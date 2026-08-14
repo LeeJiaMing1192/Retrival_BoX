@@ -1081,7 +1081,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
       if (activeOCRBase64 && activeOCRMimeType !== "text/plain") {
         apiCall = callGeminiMultimodal(prompt, activeOCRBase64, activeOCRMimeType, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT.");
       } else {
-        apiCall = callGemini(prompt, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT. Trả về JSON hợp lệ duy nhất, thật ngắn gọn và luôn hoàn tất toàn bộ JSON trước khi dừng.", 2800);
+        apiCall = callGemini(prompt, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT. Trả về JSON hợp lệ duy nhất, thật ngắn gọn và luôn hoàn tất toàn bộ JSON trước khi dừng.", 10000);
       }
 
       apiCall.then(res => {
