@@ -278,6 +278,8 @@ export default function App() {
   const [ocrTextContent, setOcrTextContent] = useState<string>("");
   const [documentTags, setDocumentTags] = useState<string[]>(["Hóa học", "Ôn thi"]);
   const [customSubject, setCustomSubject] = useState<string>("");
+  const [customSubjects, setCustomSubjects] = useState<string[]>([]);
+  const [selectedDocumentSubject, setSelectedDocumentSubject] = useState<string>("Hóa học");
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState<boolean>(false);
   const [verificationCards, setVerificationCards] = useState<Card[]>([]);
   const [verificationRoadmapTitle, setVerificationRoadmapTitle] = useState<string>("");
@@ -341,6 +343,9 @@ export default function App() {
     } else {
       setSavedRoadmaps([]);
     }
+
+    const savedCustomSubjects = localStorage.getItem("custom_subject_folders");
+    if (savedCustomSubjects) setCustomSubjects(JSON.parse(savedCustomSubjects));
 
     // 2. Load streak, points, mood, examDate, api key, settings
     const savedStreak = localStorage.getItem("userStreak");
@@ -963,8 +968,9 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
     setGenerationProgress(8);
     const isTextSource = ocrInputType === "text" || activeOCRMimeType === "text/plain";
     const currentSource = (isTextSource ? (ocrInputType === "text" ? ocrTextContent : activeOCRBase64) : activeOCRBase64).trim();
-    const selectedSubject = documentTags.find(tag => ["Hóa học", "Vật lý", "Toán học"].includes(tag)) || "Môn học chưa xác định";
-    const subjectId = selectedSubject === "Vật lý" ? "physics" : selectedSubject === "Hóa học" ? "chemistry" : `custom-${selectedSubject.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    const selectedSubject = selectedDocumentSubject || "Môn học chưa xác định";
+    const customSubjectSlug = selectedSubject.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const subjectId = selectedSubject === "Vật lý" ? "physics" : selectedSubject === "Hóa học" ? "chemistry" : `custom-${customSubjectSlug || "subject"}`;
     const chapterId = subjectId === "physics" ? "p1" : subjectId === "chemistry" ? "c1" : "general";
 
     if (!currentSource) {
@@ -2134,10 +2140,10 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                         <h3>Tạo tài liệu học tập của bạn</h3>
                         <p>Chọn thẻ để AI hiểu mục tiêu, sau đó dán kiến thức hoặc ghi chú cần học.</p>
                         <div className="document-tag-groups">
-                          <div><small>Môn học</small>{["Hóa học","Vật lý","Toán học"].map(tag => <button key={tag} className={`document-tag ${documentTags.includes(tag) ? "selected" : ""}`} onClick={() => { setDocumentTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev.filter(t => !["Hóa học","Vật lý","Toán học"].includes(t)), tag]); if (tag === "Hóa học") setActiveSubject("chemistry"); if (tag === "Vật lý") setActiveSubject("physics"); }}>{tag}</button>)}</div>
+                          <div><small>Môn học — chọn thư mục cho lộ trình</small>{["Hóa học","Vật lý","Toán học", ...customSubjects].map(tag => <button key={tag} className={`document-tag ${selectedDocumentSubject === tag ? "selected" : ""}`} onClick={() => { setSelectedDocumentSubject(tag); setDocumentTags(prev => [...prev.filter(t => !["Hóa học", "Vật lý", "Toán học", ...customSubjects].includes(t)), tag]); if (tag === "Hóa học") setActiveSubject("chemistry"); if (tag === "Vật lý") setActiveSubject("physics"); }}>{tag}</button>)}</div>
                           <div><small>Mục tiêu</small>{["Ôn thi","Hiểu bài","Luyện đề"].map(tag => <button key={tag} className={`document-tag ${documentTags.includes(tag) ? "selected" : ""}`} onClick={() => setDocumentTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</button>)}</div>
                         </div>
-                        <div className="custom-subject-row"><input value={customSubject} onChange={(e) => setCustomSubject(e.target.value)} placeholder="Thêm môn học khác…" /><button onClick={() => { const tag = customSubject.trim(); if (tag && !documentTags.includes(tag)) setDocumentTags(prev => [...prev, tag]); setCustomSubject(""); }}>+ Thêm môn</button></div>
+                        <div className="custom-subject-row"><input value={customSubject} onChange={(e) => setCustomSubject(e.target.value)} placeholder="Ví dụ: Lập trình Python, Sinh học…" /><button onClick={() => { const subject = customSubject.trim(); if (!subject) return; setCustomSubjects(prev => { const next = prev.includes(subject) ? prev : [...prev, subject]; localStorage.setItem("custom_subject_folders", JSON.stringify(next)); return next; }); setSelectedDocumentSubject(subject); setDocumentTags(prev => [...prev.filter(t => !["Hóa học", "Vật lý", "Toán học", ...customSubjects].includes(t)), subject]); setCustomSubject(""); }}>+ Tạo thư mục môn học</button></div>
                       </div>
                       <textarea 
                         className="notebook-textarea"
