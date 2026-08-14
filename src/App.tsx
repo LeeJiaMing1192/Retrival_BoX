@@ -414,7 +414,7 @@ export default function App() {
     setIsVerificationModalOpen(true);
   };
 
-  const scopeRoadmapCards = (roadmap: LearningRoadmap): LearningRoadmap => ({
+  const scopeRoadmapCards = (roadmap: LearningRoadmap, assignment?: { subjectId: string; chapterId: string }): LearningRoadmap => ({
     ...roadmap,
     milestones: roadmap.milestones.map((milestone, milestoneIndex) => ({
       ...milestone,
@@ -422,7 +422,9 @@ export default function App() {
         ...card,
         id: `${roadmap.id}-${milestone.id || milestoneIndex}-${cardIndex + 1}`,
         roadmapId: roadmap.id,
-        milestoneId: milestone.id
+        milestoneId: milestone.id,
+        subjectId: assignment?.subjectId || card.subjectId,
+        chapterId: assignment?.chapterId || card.chapterId
       }))
     }))
   });
@@ -1125,7 +1127,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
             if (!parsed.id) {
               parsed.id = `rm-${Date.now()}`;
             }
-            const scopedRoadmap = scopeRoadmapCards(parsed);
+            const scopedRoadmap = scopeRoadmapCards(parsed, { subjectId, chapterId });
             openNewRoadmap(scopedRoadmap);
             if (scopedRoadmap.milestones && scopedRoadmap.milestones.length > 0) {
               setSelectedMilestoneId(scopedRoadmap.milestones[0].id);
@@ -1269,7 +1271,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
   };
 
   const applyVerificationSubject = (subjectId: string) => {
-    const chapterId = subjectId === "physics" ? "p1" : "c1";
+    const chapterId = subjectId === "physics" ? "p1" : subjectId === "chemistry" ? "c1" : "general";
     setVerificationSubjectId(subjectId);
     setVerificationCards(prev => prev.map(card => ({ ...card, subjectId, chapterId })));
   };
@@ -2263,6 +2265,11 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                     <div className="ocr-loading-view" style={{ color: "#2d3748" }}>
                       <div className="ai-processing-spinner" style={{ borderTopColor: "#1e3a8a", borderLeftColor: "#1e3a8a" }}></div>
                       <h4 style={{ fontWeight: 700 }}>AI đang thiết lập chặng lộ trình...</h4>
+                      <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", flexWrap: "wrap", margin: "0.25rem 0 0.4rem" }}>
+                        <span className="notebook-badge" style={{ background: "#e9d493", color: "#3f493d" }}>Môn: {selectedDocumentSubject}</span>
+                        <span className="notebook-badge" style={{ background: "#dce9cf", color: "#3f493d" }}>NVIDIA Nemotron 120B</span>
+                        <span className="notebook-badge" style={{ background: "#f2dfbb", color: "#3f493d" }}>3 chặng Bloom</span>
+                      </div>
                       <div style={{ width: "100%", maxWidth: "430px", margin: "0.75rem auto 0", textAlign: "left" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.35rem" }}>
                           <span>{generationProgress < 60 ? "Đang đọc tài liệu" : generationProgress < 90 ? "Đang tạo roadmap và quiz" : "Đang hoàn tất JSON"}</span>
@@ -2272,6 +2279,19 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                           <div style={{ height: "100%", width: `${generationProgress}%`, background: "linear-gradient(90deg, #d49a42, #7e9d72)", transition: "width 1.1s ease" }} />
                         </div>
                         <p style={{ margin: "0.45rem 0 0", fontSize: "0.8rem", color: "#5b5849" }}>Tác vụ dài có thể mất vài phút; bạn có thể để trang này mở trong lúc AI xử lý.</p>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.55rem", width: "100%", maxWidth: "500px", margin: "1rem auto 0", textAlign: "left" }}>
+                        {[
+                          { icon: "fa-book-open", label: "Đọc", active: generationProgress < 60 },
+                          { icon: "fa-wand-magic-sparkles", label: "Thiết kế", active: generationProgress >= 60 && generationProgress < 90 },
+                          { icon: "fa-circle-check", label: "Kiểm duyệt", active: generationProgress >= 90 }
+                        ].map((stage, index) => (
+                          <div key={stage.label} style={{ padding: "0.65rem", border: `2px solid ${generationProgress >= (index + 1) * 30 ? "#7e9d72" : "#b9aa7d"}`, borderRadius: "10px", background: stage.active ? "#fff1c8" : "rgba(255,255,255,.35)", boxShadow: stage.active ? "3px 3px 0 rgba(78, 94, 63, .22)" : "none", transition: "all .35s ease" }}>
+                            <i className={`fa-solid ${stage.icon}`} style={{ color: stage.active ? "#a9664b" : "#8a876d", marginRight: "0.35rem" }}></i>
+                            <b style={{ fontSize: "0.82rem" }}>{stage.label}</b>
+                            <div style={{ fontSize: "0.72rem", marginTop: "0.25rem", color: "#676250" }}>{stage.active ? "Đang xử lý" : generationProgress >= (index + 1) * 30 ? "Hoàn tất" : "Chờ lượt"}</div>
+                          </div>
+                        ))}
                       </div>
                       <div className="bloom-steps" style={{ marginTop: "1rem", color: "#2d3748" }}>
                         <div className={`step-line ${ocrStep >= 1 ? (ocrStep > 1 ? "completed" : "active") : ""}`} style={{ color: ocrStep > 1 ? "#10b981" : ocrStep === 1 ? "#3b82f6" : "#6b7280" }}>
@@ -3018,6 +3038,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                   <select className="verification-input" value={verificationSubjectId} onChange={(e) => applyVerificationSubject(e.target.value)}>
                     <option value="chemistry">Hóa học</option>
                     <option value="physics">Vật lý</option>
+                    {verificationSubjectId.startsWith("custom-") && <option value={verificationSubjectId}>{selectedDocumentSubject}</option>}
                   </select>
                 </div>
               </div>
