@@ -1005,7 +1005,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
 - Chặng 1 là Thẻ Xanh (Recall - trắc nghiệm 4 lựa chọn, một đáp án đúng rõ ràng).
 - Chặng 2 là Thẻ Vàng (Apply - tự luận ngắn).
 - Chặng 3 là Thẻ Đỏ (Synthesize - tự luận tổng hợp).
-- Câu hỏi và đáp án mẫu phải thật ngắn (tối đa 35 từ mỗi trường), không lặp ý. Không dùng câu hỏi từ bất kỳ chủ đề nào khác.
+- Mỗi title/description tối đa 12 từ. Mỗi câu hỏi/đáp án mẫu tối đa 22 từ. Mỗi lựa chọn trắc nghiệm tối đa 10 từ. Không lặp ý và không dùng câu hỏi từ bất kỳ chủ đề nào khác.
 
 Đầu ra phải là một chuỗi JSON hợp lệ theo đúng cấu trúc sau (không bao bọc trong khối code markdown, không thừa ký tự ngoài JSON):
 {
@@ -1081,7 +1081,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
       if (activeOCRBase64 && activeOCRMimeType !== "text/plain") {
         apiCall = callGeminiMultimodal(prompt, activeOCRBase64, activeOCRMimeType, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT.");
       } else {
-        apiCall = callGemini(prompt, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT. Trả về JSON hợp lệ duy nhất, thật ngắn gọn.", 1500);
+        apiCall = callGemini(prompt, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT. Trả về JSON hợp lệ duy nhất, thật ngắn gọn và luôn hoàn tất toàn bộ JSON trước khi dừng.", 2800);
       }
 
       apiCall.then(res => {
@@ -1122,7 +1122,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
             // Extract cards and open verification layer popup
             openVerification(scopedRoadmap);
           } catch(e) {
-            console.error("Failed to parse Gemini Roadmap JSON response", e, res);
+            console.error("Failed to parse NVIDIA Roadmap JSON response", e, res);
             createLocalDraft();
           }
         }).catch(err => {
