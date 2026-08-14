@@ -1,1 +1,7 @@
 .ocr-uploader:before{content:none!important;display:none!important}
+.card-tutor-bubble,
+.card-tutor-bubble .tutor-bubble-header,
+.card-tutor-bubble .card-tutor-feedback-text,
+.card-tutor-bubble .text-cyan {
+  color: #171717 !important;
+}

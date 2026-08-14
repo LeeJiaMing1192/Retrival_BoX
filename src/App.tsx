@@ -623,10 +623,10 @@ export default function App() {
   };
 
   // --- GEMINI API INTEGRATIONS ---
-  const callGemini = async (prompt: string, sysPrompt: string = "") => {
+  const callGemini = async (prompt: string, sysPrompt: string = "", maxTokens: number = 900) => {
     if (!geminiApiKey) throw new Error("API Key chưa được thiết lập.");
     const url = "/api/nvidia";
-    const body: any = { model: "nvidia/nemotron-3-super-120b-a12b", temperature: 0.35, max_tokens: 4096, messages: [{ role: "system", content: sysPrompt || "Bạn là gia sư học tập hữu ích." }, { role: "user", content: prompt }] };
+    const body: any = { model: "nvidia/nemotron-3-super-120b-a12b", temperature: 0.2, max_tokens: maxTokens, messages: [{ role: "system", content: sysPrompt || "Bạn là gia sư học tập hữu ích." }, { role: "user", content: prompt }] };
 
     const response = await fetch(url, {
       method: "POST",
@@ -995,16 +995,17 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
     if (geminiApiKey) {
       let prompt = `Bạn nhận được đúng MỘT tài liệu học tập của học sinh. Môn học do học sinh chọn: ${selectedSubject}. Tags/mục tiêu: ${documentTags.join(", ") || "không có"}.`;
       if (isTextSource) {
-        prompt += `\n\nNỘI DUNG DUY NHẤT ĐƯỢC PHÉP DÙNG:\n---\n${currentSource.slice(0, 12000)}\n---\nKhông được dùng kiến thức, câu hỏi, hay tên bài từ các tài liệu trước, đặc biệt không tự thêm Este–Lipit, Sóng cơ, Hóa học hoặc Vật lý nếu chúng không xuất hiện trong nội dung trên.`;
+        prompt += `\n\nNỘI DUNG DUY NHẤT ĐƯỢC PHÉP DÙNG:\n---\n${currentSource.slice(0, 4000)}\n---\nKhông được dùng kiến thức, câu hỏi, hay tên bài từ các tài liệu trước, đặc biệt không tự thêm Este–Lipit, Sóng cơ, Hóa học hoặc Vật lý nếu chúng không xuất hiện trong nội dung trên.`;
       } else {
         prompt += `\n\nHãy chỉ dùng nội dung nhìn thấy trong tệp đính kèm. Không sử dụng ví dụ, lộ trình hoặc tài liệu mẫu cũ.`;
       }
 
       prompt += `\n\nNhiệm vụ của bạn là hãy phân tích tài liệu này và thiết lập một Lộ trình học tập cá nhân hóa (Learning Roadmap) gồm đúng 3 chặng học tập (Milestones) sắp xếp theo mức độ nhận thức tăng dần của Bloom's Taxonomy.
-Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ dựa vào tài liệu trên:
-- Mỗi chặng phải có ít nhất 1 Thẻ Xanh (Recall - trắc nghiệm 4 lựa chọn, một đáp án đúng rõ ràng).
-- Thẻ còn lại theo mức Bloom: Chặng 1 Recall, Chặng 2 Apply, Chặng 3 Synthesize.
-- Câu hỏi ngắn, không lặp ý, đáp án mẫu súc tích. Không dùng câu hỏi từ bất kỳ chủ đề nào khác.
+Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ dựa vào tài liệu trên:
+- Chặng 1 là Thẻ Xanh (Recall - trắc nghiệm 4 lựa chọn, một đáp án đúng rõ ràng).
+- Chặng 2 là Thẻ Vàng (Apply - tự luận ngắn).
+- Chặng 3 là Thẻ Đỏ (Synthesize - tự luận tổng hợp).
+- Câu hỏi và đáp án mẫu phải thật ngắn (tối đa 35 từ mỗi trường), không lặp ý. Không dùng câu hỏi từ bất kỳ chủ đề nào khác.
 
 Đầu ra phải là một chuỗi JSON hợp lệ theo đúng cấu trúc sau (không bao bọc trong khối code markdown, không thừa ký tự ngoài JSON):
 {
@@ -1075,21 +1076,15 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
   ]
 }`;
 
-      setTimeout(() => {
-        setOcrStep(2);
-      }, 1000);
+      setOcrStep(2);
+      let apiCall;
+      if (activeOCRBase64 && activeOCRMimeType !== "text/plain") {
+        apiCall = callGeminiMultimodal(prompt, activeOCRBase64, activeOCRMimeType, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT.");
+      } else {
+        apiCall = callGemini(prompt, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT. Trả về JSON hợp lệ duy nhất, thật ngắn gọn.", 1500);
+      }
 
-      setTimeout(() => {
-        setOcrStep(3);
-        
-        let apiCall;
-        if (activeOCRBase64 && activeOCRMimeType !== "text/plain") {
-          apiCall = callGeminiMultimodal(prompt, activeOCRBase64, activeOCRMimeType, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT.");
-        } else {
-          apiCall = callGemini(prompt, "Bạn là chuyên gia thiết kế sơ đồ học liệu AI THPT.");
-        }
-
-        apiCall.then(res => {
+      apiCall.then(res => {
           try {
             let clean = res.trim();
             if (clean.startsWith("```json")) clean = clean.substring(7);
@@ -1135,7 +1130,6 @@ Tạo đúng 2 câu hỏi kiểm tra cho mỗi chặng (tổng 6 thẻ), chỉ d
           alert(`Lỗi API thực tế: ${err.message}. Đã lưu một khung lộ trình trống từ tài liệu của bạn; hãy thử tạo lại khi kết nối AI ổn định.`);
           createLocalDraft();
         });
-      }, 2000);
     } else {
       createLocalDraft();
     }
