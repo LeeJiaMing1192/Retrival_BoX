@@ -391,10 +391,44 @@ export default function App() {
     localStorage.setItem("saved_roadmaps", JSON.stringify(newRoadmaps));
   };
 
+  const syncRoadmapLearningProgress = (updatedCards: Card[]) => {
+    setSavedRoadmaps(previousRoadmaps => {
+      const nextRoadmaps = previousRoadmaps.map(roadmap => {
+        let previousMilestonesReviewed = true;
+        const milestones = roadmap.milestones.map(milestone => {
+          const reviewed = milestone.cards.length > 0 && milestone.cards.every(card =>
+            updatedCards.some(deckCard => deckCard.id === card.id && deckCard.history.length > 0)
+          );
+          const status = reviewed ? "completed" as const : previousMilestonesReviewed ? "active" as const : "locked" as const;
+          previousMilestonesReviewed = previousMilestonesReviewed && reviewed;
+          return { ...milestone, status };
+        });
+        return { ...roadmap, milestones };
+      });
+      localStorage.setItem("saved_roadmaps", JSON.stringify(nextRoadmaps));
+      const refreshedActive = nextRoadmaps.find(roadmap => roadmap.id === activeRoadmap?.id);
+      if (refreshedActive) setActiveRoadmap(refreshedActive);
+      return nextRoadmaps;
+    });
+  };
+
   const recordLearningEvent = (event: string, detail: Record<string, unknown> = {}) => {
     const key = "learning_progress";
     const history = JSON.parse(localStorage.getItem(key) || "[]") as Array<Record<string, unknown>>;
     localStorage.setItem(key, JSON.stringify([...history, { event, at: new Date().toISOString(), ...detail }].slice(-500)));
+  };
+
+  const recordStudyDay = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const lastStudyDay = localStorage.getItem("lastStudyDay");
+    if (lastStudyDay === today) return;
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    setStreak(previous => {
+      const next = lastStudyDay === yesterday ? previous + 1 : 1;
+      localStorage.setItem("userStreak", String(next));
+      return next;
+    });
+    localStorage.setItem("lastStudyDay", today);
   };
 
   const openNewRoadmap = (roadmap: LearningRoadmap) => {
@@ -707,21 +741,20 @@ export default function App() {
 
   const callGeminiMultimodal = async (prompt: string, base64: string, mime: string, sysPrompt: string = "") => {
     if (!geminiApiKey) throw new Error("API Key chưa được thiết lập.");
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+    const url = "/api/nvidia";
     
     const body: any = {
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType: mime, data: base64 } }
-        ]
-      }]
+      model: "meta/llama-3.2-11b-vision-instruct",
+      temperature: 0.2,
+      max_tokens: 6000,
+      messages: [
+        ...(sysPrompt ? [{ role: "system", content: sysPrompt }] : []),
+        { role: "user", content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } }
+        ] }
+      ]
     };
-    if (sysPrompt) {
-      body.systemInstruction = {
-        parts: [{ text: sysPrompt }]
-      };
-    }
 
     const response = await fetch(url, {
       method: "POST",
@@ -734,7 +767,7 @@ export default function App() {
       throw new Error(err.error?.message || `HTTP ${response.status}`);
     }
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return data.choices?.[0]?.message?.content || "";
   };
 
   // --- CARD GRADE CLICK HANDLERS ---
@@ -882,7 +915,9 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
 
     saveCardsState(updated);
     setFilteredQueue(queue => queue.map(card => updated.find(nextCard => nextCard.id === card.id) || card));
+    syncRoadmapLearningProgress(updated);
     recordLearningEvent("card_reviewed", { cardId: activeCard.id, grade, box: newBox, timeTaken: secondsElapsed });
+    recordStudyDay();
 
     // Points addition
     const pts = { vhard: 5, hard: 10, easy: 20, veasy: 30 };
@@ -1067,10 +1102,10 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
       }
 
       prompt += `\n\nNhiệm vụ của bạn là hãy phân tích tài liệu này và thiết lập một Lộ trình học tập cá nhân hóa (Learning Roadmap) gồm đúng 3 chặng học tập (Milestones) sắp xếp theo mức độ nhận thức tăng dần của Bloom's Taxonomy.
-Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ dựa vào tài liệu trên:
-- Chặng 1 là Thẻ Xanh (Recall - trắc nghiệm 4 lựa chọn, một đáp án đúng rõ ràng).
-- Chặng 2 là Thẻ Vàng (Apply - tự luận ngắn).
-- Chặng 3 là Thẻ Đỏ (Synthesize - tự luận tổng hợp).
+Tạo đúng 3 câu hỏi kiểm tra cho mỗi chặng (tổng 9 thẻ), chỉ dựa vào tài liệu trên:
+- Chặng 1 gồm 3 Thẻ Xanh (Recall - trắc nghiệm 4 lựa chọn, một đáp án đúng rõ ràng).
+- Chặng 2 gồm 3 Thẻ Vàng (Apply - tự luận ngắn).
+- Chặng 3 gồm 3 Thẻ Đỏ (Synthesize - tự luận tổng hợp).
 - Mỗi title/description tối đa 12 từ. Mỗi câu hỏi/đáp án mẫu tối đa 22 từ. Mỗi lựa chọn trắc nghiệm tối đa 10 từ. Không lặp ý và không dùng câu hỏi từ bất kỳ chủ đề nào khác.
 
 Đầu ra phải là một chuỗi JSON hợp lệ theo đúng cấu trúc sau (không bao bọc trong khối code markdown, không thừa ký tự ngoài JSON):
@@ -1533,6 +1568,10 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
               >
                 <option value="chemistry">🧪 Hóa Học 12</option>
                 <option value="physics">⚡ Vật Lý 12</option>
+                {customSubjects.map(subject => {
+                  const slug = subject.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+                  return <option key={subject} value={`custom-${slug || "subject"}`}>📁 {subject}</option>;
+                })}
               </select>
             </div>
           </div>
@@ -1570,7 +1609,13 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
             </div>
 
             {/* Exam countdown */}
-            <div className="header-stat exam-countdown">
+            <div className="header-stat exam-countdown" style={{ cursor: "pointer" }} title="Bấm để đặt ngày thi" onClick={() => {
+              const nextDate = window.prompt("Nhập ngày thi (YYYY-MM-DD):", examDate);
+              if (nextDate && /^\d{4}-\d{2}-\d{2}$/.test(nextDate)) {
+                setExamDate(nextDate);
+                localStorage.setItem("examDate", nextDate);
+              }
+            }}>
               <i className="fa-solid fa-hourglass-half stat-icon text-cyan"></i>
               <div className="stat-text">
                 <span className="stat-label">Thi THPT QG</span>
@@ -1643,8 +1688,9 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
 
                   {/* Overall Mastery Tracker */}
                   {(() => {
-                    const totalCardsCount = cards.length;
-                    const masteredCardsCount = cards.filter(c => c.box === 3).length;
+                    const subjectCards = cards.filter(c => c.subjectId === activeSubject);
+                    const totalCardsCount = subjectCards.length;
+                    const masteredCardsCount = subjectCards.filter(c => c.box === 3).length;
                     const overallProgress = totalCardsCount > 0 ? Math.round((masteredCardsCount / totalCardsCount) * 100) : 0;
                     
                     return (
@@ -1680,19 +1726,16 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                   })()}
 
                   {/* Active Roadmaps Tracker Grid */}
-                  {savedRoadmaps.length > 0 && (
+                  {savedRoadmaps.filter(rm => rm.milestones.some(m => m.cards.some(card => card.subjectId === activeSubject))).length > 0 && (
                     <div className="glass-panel" style={{ padding: "1.25rem", marginBottom: "1.25rem", border: "3px solid #2d3748", boxShadow: "4px 4px 0px #2d3748", backgroundColor: "#fffbeb" }}>
                       <h3 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#1e3a8a", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                         🗺️ Các lộ trình đang học tập ({savedRoadmaps.length})
                       </h3>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
-                        {savedRoadmaps.map(rm => {
-                          let masteredCount = 0;
-                          rm.milestones.forEach(m => {
-                            const cardInDeck = cards.find(c => m.cards.some(mc => mc.id === c.id));
-                            if (cardInDeck && cardInDeck.box === 3) masteredCount++;
-                          });
-                          const progress = Math.round((masteredCount / 3) * 100);
+                        {savedRoadmaps.filter(rm => rm.milestones.some(m => m.cards.some(card => card.subjectId === activeSubject))).map(rm => {
+                          const roadmapCards = rm.milestones.flatMap(m => m.cards);
+                          const masteredCount = roadmapCards.filter(card => cards.some(deckCard => deckCard.id === card.id && deckCard.box === 3)).length;
+                          const progress = roadmapCards.length ? Math.round((masteredCount / roadmapCards.length) * 100) : 0;
 
                           return (
                             <div key={rm.id} className="notebook-preview-box" style={{ padding: "0.75rem 1rem", backgroundColor: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
@@ -2023,11 +2066,11 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                                 <button className="btn btn-secondary btn-sm" onClick={handleFlipCard}>
                                   Xem đáp án & Gợi ý <i className="fa-solid fa-arrow-rotate-right"></i>
                                 </button>
-                              ) : secondsElapsed < 30 ? (
+                              ) : false ? (
                                 <button className="btn btn-secondary btn-sm" disabled style={{ opacity: 0.6, cursor: "not-allowed" }}>
                                   ⏳ Suy nghĩ thêm... (Hiện gợi ý sau {30 - secondsElapsed}s)
                                 </button>
-                              ) : secondsElapsed < 45 ? (
+                              ) : false ? (
                                 <div style={{ display: "flex", gap: "0.5rem" }}>
                                   {!showHint && (
                                     <button className="btn btn-secondary btn-sm" onClick={() => setShowHint(true)}>
@@ -2046,7 +2089,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                                     </button>
                                   )}
                                   <button className="btn btn-secondary btn-sm" onClick={handleFlipCard}>
-                                    Xem đáp án <i className="fa-solid fa-arrow-rotate-right"></i>
+                                    Nộp câu trả lời <i className="fa-solid fa-paper-plane"></i>
                                   </button>
                                 </div>
                               )}
@@ -2096,8 +2139,15 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                       {/* grading */}
                       {flipped && (
                         <div className="grading-panel">
-                          <div className="grading-instruction">Bạn đánh giá mức độ nhớ của mình thế nào?</div>
+                          <div className="grading-instruction">{activeCard.type === "green" && selectedGreenOption !== activeCard.correctOption ? "Bạn chọn chưa đúng — thẻ sẽ quay lại Hộp 1 để ôn lại." : "Bạn đánh giá mức độ nhớ của mình thế nào?"}</div>
                           <div className="grading-buttons">
+                            {activeCard.type === "green" && selectedGreenOption !== activeCard.correctOption ? (
+                              <button className="btn-grade btn-grade-hard" onClick={() => handleGradeSubmit("hard")}>
+                                <span className="grade-icon">↩</span>
+                                <span className="grade-title">Ôn lại thẻ này</span>
+                                <span className="grade-time">Quay về Hộp 1</span>
+                              </button>
+                            ) : <>
                             <button className="btn-grade btn-grade-vhard" onClick={() => handleGradeSubmit("vhard")}>
                               <span className="grade-icon">😭</span>
                               <span className="grade-title">Rất khó</span>
@@ -2118,6 +2168,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                               <span className="grade-title">Rất dễ</span>
                               <span className="grade-time">Lên Hộp 3</span>
                             </button>
+                            </>}
                           </div>
                         </div>
                       )}
@@ -2193,7 +2244,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                           <div><small>Môn học — chọn thư mục cho lộ trình</small>{["Hóa học","Vật lý","Toán học", ...customSubjects].map(tag => <button key={tag} className={`document-tag ${selectedDocumentSubject === tag ? "selected" : ""}`} onClick={() => { setSelectedDocumentSubject(tag); setDocumentTags(prev => [...prev.filter(t => !["Hóa học", "Vật lý", "Toán học", ...customSubjects].includes(t)), tag]); if (tag === "Hóa học") setActiveSubject("chemistry"); if (tag === "Vật lý") setActiveSubject("physics"); }}>{tag}</button>)}</div>
                           <div><small>Mục tiêu</small>{["Ôn thi","Hiểu bài","Luyện đề"].map(tag => <button key={tag} className={`document-tag ${documentTags.includes(tag) ? "selected" : ""}`} onClick={() => setDocumentTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</button>)}</div>
                         </div>
-                        <div className="custom-subject-row"><input value={customSubject} onChange={(e) => setCustomSubject(e.target.value)} placeholder="Ví dụ: Lập trình Python, Sinh học…" /><button onClick={() => { const subject = customSubject.trim(); if (!subject) return; setCustomSubjects(prev => { const next = prev.includes(subject) ? prev : [...prev, subject]; localStorage.setItem("custom_subject_folders", JSON.stringify(next)); return next; }); setSelectedDocumentSubject(subject); setDocumentTags(prev => [...prev.filter(t => !["Hóa học", "Vật lý", "Toán học", ...customSubjects].includes(t)), subject]); setCustomSubject(""); }}>+ Tạo thư mục môn học</button></div>
+                        <div className="custom-subject-row"><input value={customSubject} onChange={(e) => setCustomSubject(e.target.value)} placeholder="Ví dụ: Lập trình Python, Sinh học…" /><button onClick={() => { const subject = customSubject.trim(); if (!subject) return; const slug = subject.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); setCustomSubjects(prev => { const next = prev.includes(subject) ? prev : [...prev, subject]; localStorage.setItem("custom_subject_folders", JSON.stringify(next)); return next; }); setSelectedDocumentSubject(subject); setActiveSubject(`custom-${slug || "subject"}`); setDocumentTags(prev => [...prev.filter(t => !["Hóa học", "Vật lý", "Toán học", ...customSubjects].includes(t)), subject]); setCustomSubject(""); }}>+ Tạo thư mục môn học</button></div>
                       </div>
                       <textarea 
                         className="notebook-textarea"
@@ -2468,7 +2519,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
           {/* TAB: KNOWLEDGE MAP */}
           {activeTab === "knowledge-map" && (
             <section className="tab-content active">
-              {savedRoadmaps.length === 0 ? (
+              {savedRoadmaps.filter(rm => rm.milestones.some(m => m.cards.some(card => card.subjectId === activeSubject))).length === 0 ? (
                 <div className="glass-panel notebook-paper" style={{ padding: "2.5rem 2rem 2.5rem 3.5rem", position: "relative", minHeight: "450px" }}>
                   <div className="spiral-rings">
                     <div className="spiral-ring"></div>
@@ -2492,18 +2543,14 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                   </div>
                 </div>
               ) : (() => {
-                const activeMap = savedRoadmaps.find(r => r.id === activeMapId) || savedRoadmaps[0];
+                const visibleRoadmaps = savedRoadmaps.filter(rm => rm.milestones.some(m => m.cards.some(card => card.subjectId === activeSubject)));
+                const activeMap = visibleRoadmaps.find(r => r.id === activeMapId) || visibleRoadmaps[0];
                 if (!activeMap) return null;
 
                 const getRoadmapProgress = (rm: LearningRoadmap) => {
-                  let masteredCount = 0;
-                  rm.milestones.forEach(m => {
-                    const cardInDeck = cards.find(c => m.cards.some(mc => mc.id === c.id));
-                    if (cardInDeck && cardInDeck.box === 3) {
-                      masteredCount++;
-                    }
-                  });
-                  return Math.round((masteredCount / 3) * 100);
+                  const roadmapCards = rm.milestones.flatMap(m => m.cards);
+                  const masteredCount = roadmapCards.filter(card => cards.some(deckCard => deckCard.id === card.id && deckCard.box === 3)).length;
+                  return roadmapCards.length ? Math.round((masteredCount / roadmapCards.length) * 100) : 0;
                 };
 
                 const getCustomMapNodesCoords = () => {
@@ -2522,7 +2569,7 @@ Tạo đúng 1 câu hỏi kiểm tra cho mỗi chặng (tổng 3 thẻ), chỉ d
                         📋 Danh sách lộ trình
                       </h3>
                       <div className="saved-roadmaps-list-scroll" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", maxHeight: "500px" }}>
-                        {savedRoadmaps.map((rm) => {
+                        {visibleRoadmaps.map((rm) => {
                           const isSelected = activeMap.id === rm.id;
                           const progress = getRoadmapProgress(rm);
                           return (
