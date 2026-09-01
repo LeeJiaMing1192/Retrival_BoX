@@ -308,6 +308,7 @@ export default function App() {
   const [moodModalOpen, setMoodModalOpen] = useState<boolean>(false);
   const [checkpointModalOpen, setCheckpointModalOpen] = useState<boolean>(false);
   const [checkpointQuestion, setCheckpointQuestion] = useState<CheckpointQuestion | null>(null);
+  const [checkpointLoading, setCheckpointLoading] = useState<boolean>(false);
   const [checkpointSelectedIdx, setCheckpointSelectedIdx] = useState<number | null>(null);
   const [checkpointFeedback, setCheckpointFeedback] = useState<{ status: 'success' | 'fail' | null, text: string }>({
     status: null,
@@ -523,11 +524,12 @@ export default function App() {
     // Burnout alert trigger count
     let box1Total = 0;
     cards.forEach(c => {
-      if (c.box === 1) box1Total++;
+      if (c.subjectId === activeSubject && c.box === 1) box1Total++;
     });
     const triggerBurnout = settings.antiBurnout && box1Total > 5;
 
     cards.forEach(card => {
+      if (card.subjectId !== activeSubject) return;
 
       stats.total++;
       const type = card.type;
@@ -946,11 +948,42 @@ Hãy phân tích và viết một phản hồi ngắn gọn (khoảng 3-4 câu) 
   // --- POPUP CHECKPOINT ---
   const triggerCheckpoint = () => {
     const list = CHECKPOINT_QUESTIONS[activeSubject] || CHECKPOINT_QUESTIONS.chemistry;
-    const q = list[Math.floor(Math.random() * list.length)];
-    setCheckpointQuestion(q);
+    const fallback = list[Math.floor(Math.random() * list.length)];
+    const recentCards = cards
+      .filter(card => card.subjectId === activeSubject)
+      .filter(card => sessionReviewedCards.some(item => item.cardId === card.id) || card.id === activeCard?.id || card.history.length > 0)
+      .sort((a, b) => new Date(b.lastReviewed || 0).getTime() - new Date(a.lastReviewed || 0).getTime())
+      .slice(0, 5);
+
+    setCheckpointModalOpen(true);
+    setCheckpointLoading(true);
+    setCheckpointQuestion(null);
     setCheckpointSelectedIdx(null);
     setCheckpointFeedback({ status: null, text: "" });
-    setCheckpointModalOpen(true);
+
+    if (recentCards.length === 0) {
+      setCheckpointQuestion(fallback);
+      setCheckpointLoading(false);
+      return;
+    }
+
+    const learnedContext = recentCards.map((card, index) =>
+      `${index + 1}. Câu đã học: ${card.question}\nÝ chính/đáp án: ${card.modelAnswer}`
+    ).join("\n\n");
+    const prompt = `Từ các thẻ học sinh VỪA học dưới đây, tạo đúng MỘT câu hỏi trắc nghiệm checkpoint để kiểm tra hiểu thật sự. Câu phải bám sát kiến thức trong các thẻ này, không dùng chủ đề ngoài. Trả về JSON duy nhất theo dạng {"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"..."}. correct là chỉ số 0-3.\n\n${learnedContext}`;
+
+    callGemini(prompt, "Bạn là giáo viên tạo một checkpoint chống tự mãn. Câu hỏi rõ ràng, 4 lựa chọn ngắn, có duy nhất một đáp án đúng.", 800)
+      .then(response => {
+        const cleaned = response.trim().replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+        const generated = JSON.parse(cleaned) as CheckpointQuestion;
+        if (!generated.question || !Array.isArray(generated.options) || generated.options.length !== 4 || generated.correct < 0 || generated.correct > 3) throw new Error("Invalid checkpoint JSON");
+        setCheckpointQuestion(generated);
+      })
+      .catch(error => {
+        console.warn("Dynamic checkpoint fallback", error);
+        setCheckpointQuestion(fallback);
+      })
+      .finally(() => setCheckpointLoading(false));
   };
 
   const handleCheckpointSelect = (idx: number) => {
@@ -1691,7 +1724,11 @@ Tạo đúng 3 câu hỏi kiểm tra cho mỗi chặng (tổng 9 thẻ), chỉ d
                     const subjectCards = cards.filter(c => c.subjectId === activeSubject);
                     const totalCardsCount = subjectCards.length;
                     const masteredCardsCount = subjectCards.filter(c => c.box === 3).length;
-                    const overallProgress = totalCardsCount > 0 ? Math.round((masteredCardsCount / totalCardsCount) * 100) : 0;
+                    const reviewedCardsCount = subjectCards.filter(c => c.history.length > 0).length;
+                    const overallProgress = totalCardsCount > 0 ? Math.round(subjectCards.reduce((total, card) => {
+                      if (card.history.length === 0) return total;
+                      return total + (card.box === 3 ? 1 : card.box === 2 ? 0.67 : 0.34);
+                    }, 0) / totalCardsCount * 100) : 0;
                     
                     return (
                       <div className="glass-panel notebook-paper" style={{ padding: "1.25rem 1.5rem", marginBottom: "1.25rem", border: "3px solid #2d3748", boxShadow: "4px 4px 0px #2d3748", position: "relative" }}>
@@ -1700,7 +1737,7 @@ Tạo đúng 3 câu hỏi kiểm tra cho mỗi chặng (tổng 9 thẻ), chỉ d
                             ✨ Tiến trình làm chủ kiến thức hiện tại: {overallProgress}%
                           </span>
                           <span style={{ fontSize: "0.9rem", fontWeight: "700", color: "#475569" }}>
-                            Đã thuộc: {masteredCardsCount}/{totalCardsCount} thẻ
+                            Đã học: {reviewedCardsCount}/{totalCardsCount} · Đã vững: {masteredCardsCount}
                           </span>
                         </div>
                         <div style={{ width: "100%", height: "20px", backgroundColor: "#e2e8f0", borderRadius: "10px", overflow: "hidden", border: "2.5px solid #2d3748" }}>
@@ -3062,7 +3099,7 @@ Tạo đúng 3 câu hỏi kiểm tra cho mỗi chặng (tổng 9 thẻ), chỉ d
       )}
 
       {/* 2. Checkpoint Warning Modal */}
-      {checkpointModalOpen && checkpointQuestion && (
+      {checkpointModalOpen && (
         <div className="modal-backdrop">
           <div className="modal-content glass-panel card-glow-red checkpoint-width">
             <div className="checkpoint-warning-icon">
@@ -3073,32 +3110,47 @@ Tạo đúng 3 câu hỏi kiểm tra cho mỗi chặng (tổng 9 thẻ), chỉ d
               <p className="text-orange text-center text-sm font-semibold">Bạn đã nhấp &quot;Dễ&quot; 4 lần liên tiếp. Hãy trả lời câu hỏi checkpoint đột xuất dưới đây để chứng minh bạn thực sự hiểu bài!</p>
             </div>
             <div className="checkpoint-body">
-              <div className="checkpoint-question">{checkpointQuestion.question}</div>
-              <div className="checkpoint-options">
-                {checkpointQuestion.options.map((opt, idx) => {
-                  let optClass = "checkpoint-option-btn";
-                  if (checkpointSelectedIdx === idx) {
-                    optClass += idx === checkpointQuestion.correct ? " correct" : " wrong";
-                  } else if (checkpointSelectedIdx !== null && idx === checkpointQuestion.correct) {
-                    optClass += " correct";
-                  }
-                  return (
-                    <button 
-                      key={idx} 
-                      className={optClass} 
-                      onClick={() => handleCheckpointSelect(idx)}
-                      disabled={checkpointSelectedIdx !== null}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-              
-              {checkpointFeedback.status && (
-                <div className={`checkpoint-feedback ${checkpointFeedback.status}`}>
-                  <p style={{ whiteSpace: "pre-line" }}>{checkpointFeedback.text}</p>
+              {checkpointLoading || !checkpointQuestion ? (
+                <div style={{ minHeight: "220px", display: "grid", placeItems: "center", textAlign: "center", gap: "0.75rem", padding: "1.5rem" }}>
+                  <div className="avatar animate-bounce" style={{ width: "58px", height: "58px", fontSize: "1.65rem", backgroundColor: "#f59e0b", border: "3px solid #78350f" }}>🤖</div>
+                  <div>
+                    <h3 style={{ margin: "0 0 .35rem", color: "#7c2d12" }}>AI đang soạn câu hỏi kiểm tra…</h3>
+                    <p className="text-sm text-muted" style={{ margin: 0 }}>Đang dựa trên các thẻ bạn vừa học để tạo một câu hỏi đúng trọng tâm.</p>
+                  </div>
+                  <div style={{ width: "min(280px, 100%)", height: "8px", borderRadius: "999px", overflow: "hidden", background: "#fde68a", border: "1px solid #d97706" }}>
+                    <div className="progress-fill" style={{ width: "68%", height: "100%", background: "#f59e0b" }} />
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="checkpoint-question">{checkpointQuestion.question}</div>
+                  <div className="checkpoint-options">
+                    {checkpointQuestion.options.map((opt, idx) => {
+                      let optClass = "checkpoint-option-btn";
+                      if (checkpointSelectedIdx === idx) {
+                        optClass += idx === checkpointQuestion.correct ? " correct" : " wrong";
+                      } else if (checkpointSelectedIdx !== null && idx === checkpointQuestion.correct) {
+                        optClass += " correct";
+                      }
+                      return (
+                        <button 
+                          key={idx} 
+                          className={optClass} 
+                          onClick={() => handleCheckpointSelect(idx)}
+                          disabled={checkpointSelectedIdx !== null}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {checkpointFeedback.status && (
+                    <div className={`checkpoint-feedback ${checkpointFeedback.status}`}>
+                      <p style={{ whiteSpace: "pre-line" }}>{checkpointFeedback.text}</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div className="modal-footer">
